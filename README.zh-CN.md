@@ -6,12 +6,12 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 
 > 实际运行时观察到了哪些 Agent、模型、工具、MCP Server、Prompt 和数据源，它们后来发生了什么变化？
 
-当前为实验性 v0.2，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
+当前为实验性 v0.3，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
 
 ## 当前能力
 
 - 读取 OTLP JSON 和简化的 observation JSON；
-- 通过 `/v1/traces` 持续接收 OTLP/HTTP JSON，并原子更新证据快照；
+- 通过 `/v1/traces` 接收 OTLP/HTTP JSON 或 Protobuf，并通过 4317 端口接收 OTLP/gRPC；
 - 构建厂商中立的 Agent 证据关系图；
 - 区分 `inferred`、`declared`、`observed`、`verified` 四级证据；
 - 导出 CycloneDX 1.7；
@@ -22,6 +22,8 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 - 对在线请求限制大小，支持 gzip、可选 Bearer Token，并去除近期重复 span。
 
 ## 快速体验
+
+要求 Go 1.26.5 或更高版本；更早的 Go 1.26 补丁版本包含已在 1.26.5 修复的标准库漏洞。
 
 ```bash
 go install github.com/Aaron911/ai-evidence-bom/cmd/aiebom@latest
@@ -57,11 +59,12 @@ go build -o ./bin/aiebom ./cmd/aiebom
 
 ## 在线采集
 
-启动仅监听本机的接收器：
+启动仅监听本机的双协议接收器：
 
 ```bash
 ./bin/aiebom collect \
   --listen 127.0.0.1:4318 \
+  --grpc-listen 127.0.0.1:4317 \
   --graph-out work/live.evidence.json \
   --bom-out work/live.cdx.json
 ```
@@ -75,8 +78,8 @@ curl --fail-with-body \
   http://127.0.0.1:4318/v1/traces
 ```
 
-可通过 `GET /healthz` 检查健康状态，并通过 `/v1/evidence`、`/v1/bom`、`/v1/stats` 查看实时结果。鉴权、请求限制和已知协议缺口见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。
+同一个 HTTP 地址还接受 `application/x-protobuf`，gRPC 端口实现标准 OTLP `TraceService/Export`。可通过 `GET /healthz` 检查健康状态，并通过 `/v1/evidence`、`/v1/bom`、`/v1/stats` 查看实时结果。
 
-v0.2 目前只接收 **OTLP/HTTP JSON**；二进制 protobuf 和 OTLP/gRPC 尚未支持，不能把默认使用 protobuf 的 Collector exporter 直接指向它。
+现在可以直接接在 OpenTelemetry Collector 后面：可使用 [OTLP/HTTP Protobuf 配置](examples/otel-collector-http.yaml) 或 [OTLP/gRPC 配置](examples/otel-collector-grpc.yaml)。鉴权、请求限制、TLS 边界和协议范围见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。v0.3 只处理 traces，不接收 metrics、logs 或 profiles。
 
 完整使用方法、架构和项目边界请查看英文 [README.md](README.md)。

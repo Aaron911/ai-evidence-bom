@@ -15,7 +15,7 @@ This roadmap is organized around falsifiable adoption gates rather than a promis
 ## Phase 1 — real telemetry adapters
 
 - [x] Consume OTLP/HTTP JSON directly with gzip, bounded requests, persistence, and retry deduplication
-- [ ] Accept OTLP binary protobuf and gRPC or publish an OpenTelemetry Collector component
+- [x] Accept OTLP/HTTP binary protobuf and OTLP/gRPC with matching authentication and privacy behavior
 - [ ] Validate two independent frameworks, initially Dify and one code-first agent framework
 - [x] Normalize the core current OpenTelemetry GenAI model, agent, tool, and retrieval attributes
 - [ ] Add fixtures for model calls, MCP tool calls, retrieval, and multi-agent handoff

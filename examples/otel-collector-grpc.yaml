@@ -1,0 +1,28 @@
+# OpenTelemetry Collector -> AI Evidence BOM over OTLP/gRPC.
+# tls.insecure is required because aiebom's built-in local listener is plaintext.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:14317
+      http:
+        endpoint: 127.0.0.1:14318
+
+processors:
+  batch: {}
+
+exporters:
+  otlp_grpc/aiebom:
+    endpoint: 127.0.0.1:4317
+    compression: gzip
+    tls:
+      insecure: true
+    headers:
+      authorization: "Bearer ${env:AIEBOM_TOKEN}"
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_grpc/aiebom]

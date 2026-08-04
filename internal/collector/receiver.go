@@ -2,6 +2,7 @@ package collector
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,13 @@ import (
 	"sync"
 	"time"
 
+	collectortracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	grpcstatus "google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/Aaron911/ai-evidence-bom/internal/aggregate"
 	"github.com/Aaron911/ai-evidence-bom/internal/cyclonedx"
 	inputpkg "github.com/Aaron911/ai-evidence-bom/internal/input"
@@ -25,6 +33,8 @@ import (
 const (
 	DefaultMaxRequestBytes = 64 << 20
 	DefaultMaxDedupeItems  = 100_000
+	mediaTypeJSON          = "application/json"
+	mediaTypeProtobuf      = "application/x-protobuf"
 )
 
 var errRequestTooLarge = errors.New("request body exceeds configured limit")
@@ -49,9 +59,11 @@ type Stats struct {
 	LastAcceptedAt time.Time `json:"lastAcceptedAt,omitempty"`
 }
 
-// Receiver accepts OTLP/HTTP JSON traces and continuously materializes an
-// evidence graph. It intentionally does not retain raw payloads.
+// Receiver accepts OTLP/HTTP and OTLP/gRPC traces and continuously
+// materializes an evidence graph. It intentionally does not retain raw payloads.
 type Receiver struct {
+	collectortracepb.UnimplementedTraceServiceServer
+
 	config Config
 
 	mu        sync.Mutex
@@ -60,6 +72,8 @@ type Receiver struct {
 	seenOrder []string
 	stats     Stats
 }
+
+var _ collectortracepb.TraceServiceServer = (*Receiver)(nil)
 
 func New(config Config) (*Receiver, error) {
 	if strings.TrimSpace(config.GraphOut) == "" {
@@ -137,37 +151,70 @@ func (receiver *Receiver) handleTraces(response http.ResponseWriter, request *ht
 		methodNotAllowed(response, http.MethodPost)
 		return
 	}
-	if !receiver.authorized(request) {
-		response.Header().Set("WWW-Authenticate", "Bearer")
-		writeStatus(response, http.StatusUnauthorized, "missing or invalid bearer token")
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || mediaType != mediaTypeJSON && mediaType != mediaTypeProtobuf {
+		writeStatus(response, http.StatusUnsupportedMediaType, "supported Content-Type values are application/json and application/x-protobuf")
 		return
 	}
-	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
-		writeStatus(response, http.StatusUnsupportedMediaType, "only OTLP/HTTP JSON is supported; use Content-Type: application/json")
+	if !receiver.authorized(request) {
+		response.Header().Set("WWW-Authenticate", "Bearer")
+		writeOTLPStatus(response, http.StatusUnauthorized, mediaType, codes.Unauthenticated, "missing or invalid bearer token")
 		return
 	}
 	body, err := readBody(response, request, receiver.config.MaxRequestBytes)
 	if err != nil {
 		if errors.Is(err, errRequestTooLarge) {
-			writeStatus(response, http.StatusRequestEntityTooLarge, err.Error())
+			writeOTLPStatus(response, http.StatusRequestEntityTooLarge, mediaType, codes.ResourceExhausted, err.Error())
 			return
 		}
-		writeStatus(response, http.StatusBadRequest, err.Error())
+		writeOTLPStatus(response, http.StatusBadRequest, mediaType, codes.InvalidArgument, err.Error())
 		return
 	}
-	observations, source, err := inputpkg.ParseOTLP(body, receiver.config.Source)
+	var observations []inputpkg.Observation
+	var source string
+	switch mediaType {
+	case mediaTypeJSON:
+		observations, source, err = inputpkg.ParseOTLP(body, receiver.config.Source)
+	case mediaTypeProtobuf:
+		var exportRequest collectortracepb.ExportTraceServiceRequest
+		if decodeErr := (proto.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(body, &exportRequest); decodeErr != nil {
+			err = fmt.Errorf("decode OTLP protobuf: %w", decodeErr)
+		} else {
+			observations, source, err = inputpkg.ParseOTLPProto(&exportRequest, receiver.config.Source)
+		}
+	}
 	if err != nil {
 		receiver.recordFailure()
-		writeStatus(response, http.StatusBadRequest, err.Error())
+		writeOTLPStatus(response, http.StatusBadRequest, mediaType, codes.InvalidArgument, err.Error())
 		return
 	}
 	if err := receiver.accept(observations, source); err != nil {
 		receiver.recordFailure()
-		writeStatus(response, http.StatusInternalServerError, "persist evidence snapshot: "+err.Error())
+		writeOTLPStatus(response, http.StatusInternalServerError, mediaType, codes.Internal, "persist evidence snapshot: "+err.Error())
+		return
+	}
+	if mediaType == mediaTypeProtobuf {
+		writeProto(response, http.StatusOK, &collectortracepb.ExportTraceServiceResponse{})
 		return
 	}
 	writeJSON(response, http.StatusOK, struct{}{})
+}
+
+// Export implements the OTLP/gRPC TraceService.
+func (receiver *Receiver) Export(ctx context.Context, request *collectortracepb.ExportTraceServiceRequest) (*collectortracepb.ExportTraceServiceResponse, error) {
+	if !receiver.authorizedGRPC(ctx) {
+		return nil, grpcstatus.Error(codes.Unauthenticated, "missing or invalid bearer token")
+	}
+	observations, source, err := inputpkg.ParseOTLPProto(request, receiver.config.Source)
+	if err != nil {
+		receiver.recordFailure()
+		return nil, grpcstatus.Error(codes.InvalidArgument, err.Error())
+	}
+	if err := receiver.accept(observations, source); err != nil {
+		receiver.recordFailure()
+		return nil, grpcstatus.Error(codes.Internal, "persist evidence snapshot: "+err.Error())
+	}
+	return &collectortracepb.ExportTraceServiceResponse{}, nil
 }
 
 func (receiver *Receiver) handleEvidence(response http.ResponseWriter, request *http.Request) {
@@ -211,10 +258,27 @@ func (receiver *Receiver) authorizedRead(response http.ResponseWriter, request *
 }
 
 func (receiver *Receiver) authorized(request *http.Request) bool {
+	return receiver.authorizedHeader(request.Header.Get("Authorization"))
+}
+
+func (receiver *Receiver) authorizedGRPC(ctx context.Context) bool {
 	if receiver.config.AuthToken == "" {
 		return true
 	}
-	parts := strings.SplitN(strings.TrimSpace(request.Header.Get("Authorization")), " ", 2)
+	values := metadata.ValueFromIncomingContext(ctx, "authorization")
+	for _, value := range values {
+		if receiver.authorizedHeader(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func (receiver *Receiver) authorizedHeader(header string) bool {
+	if receiver.config.AuthToken == "" {
+		return true
+	}
+	parts := strings.SplitN(strings.TrimSpace(header), " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return false
 	}
@@ -389,6 +453,35 @@ func methodNotAllowed(response http.ResponseWriter, allowed string) {
 
 func writeStatus(response http.ResponseWriter, status int, message string) {
 	writeJSON(response, status, map[string]string{"message": message})
+}
+
+func writeOTLPStatus(response http.ResponseWriter, httpStatus int, mediaType string, code codes.Code, message string) {
+	statusMessage := grpcstatus.New(code, message).Proto()
+	if mediaType == mediaTypeProtobuf {
+		writeProto(response, httpStatus, statusMessage)
+		return
+	}
+	data, err := protojson.Marshal(statusMessage)
+	if err != nil {
+		writeStatus(response, http.StatusInternalServerError, "encode OTLP status")
+		return
+	}
+	response.Header().Set("Content-Type", mediaTypeJSON)
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.WriteHeader(httpStatus)
+	_, _ = response.Write(append(data, '\n'))
+}
+
+func writeProto(response http.ResponseWriter, status int, message proto.Message) {
+	data, err := proto.Marshal(message)
+	if err != nil {
+		writeStatus(response, http.StatusInternalServerError, "encode protobuf response")
+		return
+	}
+	response.Header().Set("Content-Type", mediaTypeProtobuf)
+	response.Header().Set("X-Content-Type-Options", "nosniff")
+	response.WriteHeader(status)
+	_, _ = response.Write(data)
 }
 
 func writeJSON(response http.ResponseWriter, status int, value any) {

@@ -48,11 +48,11 @@ Each node and edge has an evidence summary:
 }
 ```
 
-At most 20 trace identifiers are retained per node or edge in v0.2. Observation counts continue increasing after that cap.
+At most 20 trace identifiers are retained per node or edge in v0.3. Observation counts continue increasing after that cap.
 
 Continuous collection merges snapshots by stable node and edge identity. It preserves the strongest evidence level, earliest and latest observation time, all observed versions, and cumulative observation counts. The latest timestamp wins when version or property values conflict.
 
-OTLP instrumentation scope name, version, and schema URL are retained on relevant nodes as provenance. Unknown OTLP fields are ignored as required by the OTLP JSON mapping; arbitrary attributes are not copied into output properties.
+OTLP JSON and protobuf requests are converted to the same internal observation contract. Instrumentation scope name, version, and schema URL are retained on relevant nodes as provenance. Unknown OTLP fields are ignored, and arbitrary attributes are not copied into output properties.
 
 ## CycloneDX mapping
 

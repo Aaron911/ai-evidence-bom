@@ -6,12 +6,12 @@ It answers a narrower question than an ordinary scanner:
 
 > What models, agents, tools, MCP servers, prompts, and data sources were actually observed at runtime, and how did that set change?
 
-The project is an experimental v0.2 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
+The project is an experimental v0.3 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
 
 ## Current capabilities
 
 - Reads OTLP JSON (`resourceSpans`) and a compact observation JSON format.
-- Receives OTLP/HTTP JSON traces continuously at `/v1/traces` and atomically updates evidence snapshots.
+- Receives OTLP/HTTP JSON or protobuf traces at `/v1/traces` and OTLP/gRPC traces on port 4317.
 - Normalizes agents, models, tools, MCP servers, prompts, and data sources into a stable graph.
 - Records evidence as `inferred`, `declared`, `observed`, or `verified`.
 - Exports CycloneDX 1.7 JSON with AI/ML component types and relationships.
@@ -23,7 +23,7 @@ The project is an experimental v0.2 validation build. It is not a compliance cer
 
 ## Quick start
 
-Requirements: Go 1.26 or later.
+Requirements: Go 1.26.5 or later. Earlier Go 1.26 patch releases contain standard-library vulnerabilities fixed in 1.26.5.
 
 ```bash
 go install github.com/Aaron911/ai-evidence-bom/cmd/aiebom@latest
@@ -57,13 +57,14 @@ go build -o ./bin/aiebom ./cmd/aiebom
 
 The sample policy intentionally rejects the new `shell.execute` capability and exits with status 3.
 
-### Live OTLP/HTTP collection
+### Live OTLP collection
 
 Start a local receiver:
 
 ```bash
 ./bin/aiebom collect \
   --listen 127.0.0.1:4318 \
+  --grpc-listen 127.0.0.1:4317 \
   --graph-out work/live.evidence.json \
   --bom-out work/live.cdx.json
 ```
@@ -77,7 +78,9 @@ curl --fail-with-body \
   http://127.0.0.1:4318/v1/traces
 ```
 
-The receiver also exposes `GET /healthz`, `/v1/evidence`, `/v1/bom`, and `/v1/stats`. Only health is intentionally unauthenticated when a token is configured. See [docs/RUNTIME_RECEIVER.md](docs/RUNTIME_RECEIVER.md) for authentication, limits, persistence, and known protocol gaps.
+The HTTP receiver also accepts `application/x-protobuf`; the gRPC listener implements the standard OTLP `TraceService/Export` method. It exposes `GET /healthz`, `/v1/evidence`, `/v1/bom`, and `/v1/stats` over HTTP. Only health is intentionally unauthenticated when a token is configured.
+
+To place an OpenTelemetry Collector in front of the receiver, set `AIEBOM_TOKEN` and use [the OTLP/HTTP protobuf example](examples/otel-collector-http.yaml) or [the OTLP/gRPC example](examples/otel-collector-grpc.yaml). See [docs/RUNTIME_RECEIVER.md](docs/RUNTIME_RECEIVER.md) for authentication, limits, persistence, and deployment boundaries.
 
 ### Optional private prompt fingerprints
 
@@ -126,22 +129,23 @@ Higher evidence does not mean that a component is safe. It means only that its i
 ## Architecture
 
 ```text
-OTLP/HTTP JSON ──> live receiver ──┐
-                                  v
-OTLP files / declarations ──> evidence normalizer
-                                  |
-                                  v
-                       vendor-neutral evidence graph
-                           |          |          |
-                           v          v          v
-                     CycloneDX      diff       policy/sign
+OTLP/HTTP JSON or protobuf ──┐
+OTLP/gRPC protobuf ──────────┼──> live receiver ──┐
+                            │                    v
+OTLP JSON files / declarations ────────> evidence normalizer
+                                                 |
+                                                 v
+                                      vendor-neutral evidence graph
+                                          |          |          |
+                                          v          v          v
+                                    CycloneDX      diff       policy/sign
 ```
 
 The internal graph is the source of truth. Export formats are adapters so the core is not coupled to one BOM standard.
 
 ## Policy example
 
-Policies are JSON in v0.2:
+Policies are JSON in v0.3:
 
 ```json
 {
@@ -183,7 +187,7 @@ See [docs/SCHEMA.md](docs/SCHEMA.md) for the compact input and graph contracts.
 This project does not currently:
 
 - capture traffic from closed-source clients without instrumentation;
-- accept OTLP binary protobuf or OTLP/gRPC; the v0.2 live receiver accepts OTLP/HTTP JSON only;
+- ingest OTLP metrics, logs, or profiles; v0.3 deliberately accepts traces only;
 - prove which weights a hosted model provider actually served;
 - retain prompt, completion, tool argument, or tool result content;
 - declare a prompt, model, or tool safe;
@@ -200,6 +204,7 @@ Version history is recorded in [CHANGELOG.md](CHANGELOG.md).
 go test ./...
 go test -race ./...
 go vet ./...
+go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 go build ./cmd/aiebom
 ```
 

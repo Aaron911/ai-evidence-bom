@@ -1,0 +1,27 @@
+# OpenTelemetry Collector -> AI Evidence BOM over OTLP/HTTP protobuf.
+# Start aiebom with both listeners enabled before starting the Collector.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:14317
+      http:
+        endpoint: 127.0.0.1:14318
+
+processors:
+  batch: {}
+
+exporters:
+  otlp_http/aiebom:
+    endpoint: http://127.0.0.1:4318
+    encoding: proto
+    compression: gzip
+    headers:
+      authorization: "Bearer ${env:AIEBOM_TOKEN}"
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/aiebom]

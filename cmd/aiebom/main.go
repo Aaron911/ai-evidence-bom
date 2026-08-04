@@ -16,6 +16,9 @@ import (
 	"syscall"
 	"time"
 
+	collectortracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"google.golang.org/grpc"
+
 	"github.com/Aaron911/ai-evidence-bom/internal/collector"
 	"github.com/Aaron911/ai-evidence-bom/internal/cyclonedx"
 	"github.com/Aaron911/ai-evidence-bom/internal/graphdiff"
@@ -30,7 +33,7 @@ const usageText = `AI Evidence BOM
 
 Usage:
   aiebom scan    --input traces.json --graph-out evidence.json [--bom-out bom.cdx.json]
-  aiebom collect --graph-out evidence.json [--bom-out bom.cdx.json] [--listen 127.0.0.1:4318]
+  aiebom collect --graph-out evidence.json [--listen 127.0.0.1:4318] [--grpc-listen 127.0.0.1:4317]
   aiebom export  --input evidence.json --output bom.cdx.json
   aiebom diff    --before old.json --after new.json --output diff.json [--fail-on-change]
   aiebom policy  --input evidence.json --policy policy.json --output report.json
@@ -39,7 +42,7 @@ Usage:
   aiebom verify  --input evidence.json --public-key public.pem --signature evidence.sig.json
 
 Inputs to scan may be compact observation JSON or OTLP JSON with resourceSpans.
-Collect accepts OTLP/HTTP JSON trace requests at POST /v1/traces.
+Collect accepts OTLP/HTTP JSON or protobuf at POST /v1/traces and OTLP/gRPC TraceService exports.
 Prompt and tool-call content is not retained; optional prompt fingerprints use keyed HMAC-SHA-256.
 `
 
@@ -89,9 +92,10 @@ func main() {
 func runCollect(args []string) error {
 	flags := flag.NewFlagSet("collect", flag.ContinueOnError)
 	listenAddress := flags.String("listen", "127.0.0.1:4318", "OTLP/HTTP listen address")
+	grpcListenAddress := flags.String("grpc-listen", "127.0.0.1:4317", "OTLP/gRPC listen address; empty disables gRPC")
 	graphOut := flags.String("graph-out", "", "continuously updated evidence graph JSON")
 	bomOut := flags.String("bom-out", "", "optional continuously updated CycloneDX JSON")
-	source := flags.String("source", "otlp-http", "receiver source name")
+	source := flags.String("source", "otlp", "receiver source name")
 	authTokenPath := flags.String("auth-token-file", "", "optional bearer token file")
 	hmacKeyPath := flags.String("sensitive-hmac-key-file", "", "optional key for privacy-preserving prompt fingerprints")
 	maxRequestBytes := flags.Int64("max-request-bytes", collector.DefaultMaxRequestBytes, "maximum request bytes before and after decompression")
@@ -101,6 +105,12 @@ func runCollect(args []string) error {
 	}
 	if *graphOut == "" {
 		return fmt.Errorf("collect requires --graph-out")
+	}
+	if *listenAddress == "" && *grpcListenAddress == "" {
+		return fmt.Errorf("collect requires at least one of --listen or --grpc-listen")
+	}
+	if *maxRequestBytes > int64(^uint(0)>>1) {
+		return fmt.Errorf("max request bytes exceeds platform limit")
 	}
 
 	authToken := ""
@@ -114,7 +124,7 @@ func runCollect(args []string) error {
 			return fmt.Errorf("auth token file must not be empty")
 		}
 	}
-	if !isLoopbackListen(*listenAddress) && authToken == "" {
+	if ((*listenAddress != "" && !isLoopbackListen(*listenAddress)) || (*grpcListenAddress != "" && !isLoopbackListen(*grpcListenAddress))) && authToken == "" {
 		return fmt.Errorf("non-loopback listen address requires --auth-token-file")
 	}
 
@@ -142,35 +152,90 @@ func runCollect(args []string) error {
 	if err != nil {
 		return err
 	}
-	server := &http.Server{
-		Addr:              *listenAddress,
-		Handler:           receiver,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       2 * time.Minute,
-		MaxHeaderBytes:    1 << 20,
+	var httpServer *http.Server
+	var httpListener net.Listener
+	if *listenAddress != "" {
+		httpListener, err = net.Listen("tcp", *listenAddress)
+		if err != nil {
+			return fmt.Errorf("listen for OTLP/HTTP: %w", err)
+		}
+		httpServer = &http.Server{
+			Handler:           receiver,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       2 * time.Minute,
+			MaxHeaderBytes:    1 << 20,
+		}
+	}
+
+	var grpcServer *grpc.Server
+	var grpcListener net.Listener
+	if *grpcListenAddress != "" {
+		grpcListener, err = net.Listen("tcp", *grpcListenAddress)
+		if err != nil {
+			if httpListener != nil {
+				_ = httpListener.Close()
+			}
+			return fmt.Errorf("listen for OTLP/gRPC: %w", err)
+		}
+		grpcServer = grpc.NewServer(grpc.MaxRecvMsgSize(int(*maxRequestBytes)))
+		collectortracepb.RegisterTraceServiceServer(grpcServer, receiver)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	errorsChannel := make(chan error, 1)
-	go func() {
-		fmt.Fprintf(os.Stderr, "listening for OTLP/HTTP JSON traces on http://%s/v1/traces\n", *listenAddress)
-		err := server.ListenAndServe()
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errorsChannel <- err
-		}
-	}()
+	errorsChannel := make(chan error, 2)
+	if httpServer != nil {
+		go func() {
+			fmt.Fprintf(os.Stderr, "listening for OTLP/HTTP JSON and protobuf traces on http://%s/v1/traces\n", httpListener.Addr())
+			err := httpServer.Serve(httpListener)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errorsChannel <- fmt.Errorf("serve OTLP/HTTP: %w", err)
+			}
+		}()
+	}
+	if grpcServer != nil {
+		go func() {
+			fmt.Fprintf(os.Stderr, "listening for OTLP/gRPC traces on %s\n", grpcListener.Addr())
+			if err := grpcServer.Serve(grpcListener); err != nil {
+				errorsChannel <- fmt.Errorf("serve OTLP/gRPC: %w", err)
+			}
+		}()
+	}
 
 	select {
 	case err := <-errorsChannel:
-		return fmt.Errorf("serve OTLP/HTTP: %w", err)
+		if httpServer != nil {
+			_ = httpServer.Close()
+		}
+		if grpcServer != nil {
+			grpcServer.Stop()
+		}
+		return err
 	case <-ctx.Done():
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := server.Shutdown(shutdownContext); err != nil {
-			return fmt.Errorf("shutdown OTLP/HTTP receiver: %w", err)
+		if httpServer != nil {
+			if err := httpServer.Shutdown(shutdownContext); err != nil {
+				if grpcServer != nil {
+					grpcServer.Stop()
+				}
+				return fmt.Errorf("shutdown OTLP/HTTP receiver: %w", err)
+			}
+		}
+		if grpcServer != nil {
+			stopped := make(chan struct{})
+			go func() {
+				grpcServer.GracefulStop()
+				close(stopped)
+			}()
+			select {
+			case <-stopped:
+			case <-shutdownContext.Done():
+				grpcServer.Stop()
+				return fmt.Errorf("shutdown OTLP/gRPC receiver: %w", shutdownContext.Err())
+			}
 		}
 		fmt.Fprintln(os.Stderr, "collector stopped")
 		return nil
