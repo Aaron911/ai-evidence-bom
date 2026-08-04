@@ -11,6 +11,9 @@ api_port=5001
 mock_port=5004
 receiver_token="${AIEBOM_LIVE_TOKEN:-dify-runtime-receiver-token}"
 compose_project="aiebom-dify-runtime-$$"
+plugin_identifier="langgenius/openai:0.2.5@373362a028986aae53a7baf73a7f11991ba3c22c69eaf97d6cde048cfd4a9f98"
+plugin_package_sha256="e055503b333915818e1c26654276cceaa4d0498ced726c3a752087394b0b00b3"
+plugin_package="$output_dir/openai-0.2.5.difypkg"
 binary="$output_dir/aiebom"
 graph="$output_dir/evidence.json"
 bom="$output_dir/bom.cdx.json"
@@ -22,26 +25,38 @@ compose_started=false
 receiver_pid=""
 mock_pid=""
 
-for required in curl docker git jq tar uv; do
+for required in awk curl docker git jq tar uv; do
   if ! command -v "$required" >/dev/null 2>&1; then
     echo "required command not found: $required" >&2
     exit 1
   fi
 done
+if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
+  echo "required SHA-256 command not found: sha256sum or shasum" >&2
+  exit 1
+fi
 docker compose version >/dev/null
 
 cleanup() {
   status=$?
+  trap - EXIT
   if [[ "$status" -ne 0 && "$compose_started" == true ]]; then
     "${compose[@]}" ps >&2 || true
     "${compose[@]}" logs --tail 200 api plugin_daemon >&2 || true
   fi
   if [[ "$compose_started" == true ]]; then
-    "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
+    "${compose[@]}" down --timeout 10 --volumes --remove-orphans >/dev/null 2>&1 || true
   fi
   for pid in "$mock_pid" "$receiver_pid"; do
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-      kill -INT "$pid" 2>/dev/null || true
+      kill -TERM "$pid" 2>/dev/null || true
+      for _ in $(seq 1 50); do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.1
+      done
+      if kill -0 "$pid" 2>/dev/null; then
+        kill -KILL "$pid" 2>/dev/null || true
+      fi
       wait "$pid" 2>/dev/null || true
     fi
   done
@@ -82,6 +97,20 @@ fi
 
 if [[ "$actual_commit" != "$dify_commit" ]]; then
   echo "expected Dify commit $dify_commit, found $actual_commit" >&2
+  exit 1
+fi
+
+curl --fail --silent --show-error --location \
+  --retry 3 --retry-all-errors \
+  --output "$plugin_package" \
+  "https://marketplace.dify.ai/api/v1/plugins/download?unique_identifier=langgenius%2Fopenai%3A0.2.5%40373362a028986aae53a7baf73a7f11991ba3c22c69eaf97d6cde048cfd4a9f98"
+if command -v sha256sum >/dev/null 2>&1; then
+  actual_plugin_sha256="$(sha256sum "$plugin_package" | awk '{print $1}')"
+else
+  actual_plugin_sha256="$(shasum -a 256 "$plugin_package" | awk '{print $1}')"
+fi
+if [[ "$actual_plugin_sha256" != "$plugin_package_sha256" ]]; then
+  echo "Dify plugin package checksum mismatch" >&2
   exit 1
 fi
 
@@ -169,13 +198,17 @@ setup_dir="$dify_checkout/scripts/stress-test/setup"
 cd "$dify_checkout"
 "${python_command[@]}" "$setup_dir/setup_admin.py"
 "${python_command[@]}" "$setup_dir/login_admin.py"
-"${python_command[@]}" "$setup_dir/install_openai_plugin.py"
+state_file="$setup_dir/config/stress_test_state.json"
+"${python_command[@]}" "$repo_root/scripts/live/dify_install_local_plugin.py" \
+  --state "$state_file" \
+  --package "$plugin_package" \
+  --expected-identifier "$plugin_identifier" \
+  --base-url "http://127.0.0.1:$api_port"
 "${python_command[@]}" "$setup_dir/configure_openai_plugin.py"
 "${python_command[@]}" "$setup_dir/import_workflow_app.py"
 "${python_command[@]}" "$setup_dir/create_api_key.py" >"$setup_log"
 "${python_command[@]}" "$setup_dir/publish_workflow.py"
 
-state_file="$setup_dir/config/stress_test_state.json"
 "${python_command[@]}" "$repo_root/scripts/live/dify_runtime_assert.py" \
   --state "$state_file" \
   --base-url "http://127.0.0.1:$api_port" \

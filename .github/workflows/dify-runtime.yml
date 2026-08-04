@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/dify-runtime.yml
       - scripts/live/dify-runtime-compose.override.yaml
+      - scripts/live/dify_install_local_plugin.py
       - scripts/live/dify_runtime_assert.py
       - scripts/live/fixtures/dify-runtime-workflow.yml
       - scripts/live/verify_dify_runtime.sh
