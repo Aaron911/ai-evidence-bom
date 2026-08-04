@@ -6,15 +6,15 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 
 > 实际运行时观察到了哪些 Agent、模型、工具、MCP Server、Prompt 和数据源，它们后来发生了什么变化？
 
-当前为实验性 v0.4，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
+当前为实验性 v0.5，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
 
 ## 当前能力
 
 - 读取 OTLP JSON 和简化的 observation JSON；
 - 通过 `/v1/traces` 接收 OTLP/HTTP JSON 或 Protobuf，并通过 4317 端口接收 OTLP/gRPC；
 - 构建厂商中立的 Agent 证据关系图；
-- 使用 OTLP 的父子 span 关系，把模型和工具归属到正确的 Agent，并消除框架汇总 span 造成的重复模型；
-- 提供基于上游源码构造的 Dify 与 Microsoft Agent Framework 兼容性契约；
+- 跨 OTLP 批次使用父子 span 关系，把模型和工具归属到正确的 Agent，并消除框架汇总 span 造成的重复模型；
+- 提供 Dify 与 Microsoft Agent Framework 的源码契约和可执行兼容性检查；
 - 区分 `inferred`、`declared`、`observed`、`verified` 四级证据；
 - 导出 CycloneDX 1.7；
 - 检测模型、工具、MCP、数据源和权限变化；
@@ -82,6 +82,15 @@ curl --fail-with-body \
 
 同一个 HTTP 地址还接受 `application/x-protobuf`，gRPC 端口实现标准 OTLP `TraceService/Export`。可通过 `GET /healthz` 检查健康状态，并通过 `/v1/evidence`、`/v1/bom`、`/v1/stats` 查看实时结果。
 
-现在可以直接接在 OpenTelemetry Collector 后面：可使用 [OTLP/HTTP Protobuf 配置](examples/otel-collector-http.yaml) 或 [OTLP/gRPC 配置](examples/otel-collector-grpc.yaml)。鉴权、请求限制、TLS 边界和协议范围见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。v0.4 只处理 traces，不接收 metrics、logs 或 profiles。
+现在可以直接接在 OpenTelemetry Collector 后面：可使用 [OTLP/HTTP Protobuf 配置](examples/otel-collector-http.yaml) 或 [OTLP/gRPC 配置](examples/otel-collector-grpc.yaml)。鉴权、请求限制、TLS 边界和协议范围见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。v0.5 只处理 traces，不接收 metrics、logs 或 profiles。
+
+无需模型 API Key 即可运行两项确定性兼容性检查：
+
+```bash
+scripts/live/verify_agent_framework.sh
+scripts/live/verify_dify_instrumentation.sh
+```
+
+前者运行 Microsoft Agent Framework 的真实 Agent、模型遥测和工具调用链路；后者隔离执行 Dify 1.16.1 的真实 OTel handler/parser，但不等同于完整 Dify 部署。证据等级和限制见 [兼容矩阵](docs/COMPATIBILITY.md) 与 [v0.5 验证记录](docs/evidence/v0.5.0.md)。
 
 兼容矩阵见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)，每轮方向校准记录见 [docs/DIRECTION.md](docs/DIRECTION.md)。完整使用方法、架构和项目边界请查看英文 [README.md](README.md)。

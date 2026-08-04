@@ -6,15 +6,15 @@ It answers a narrower question than an ordinary scanner:
 
 > What models, agents, tools, MCP servers, prompts, and data sources were actually observed at runtime, and how did that set change?
 
-The project is an experimental v0.4 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
+The project is an experimental v0.5 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
 
 ## Current capabilities
 
 - Reads OTLP JSON (`resourceSpans`) and a compact observation JSON format.
 - Receives OTLP/HTTP JSON or protobuf traces at `/v1/traces` and OTLP/gRPC traces on port 4317.
 - Normalizes agents, models, tools, MCP servers, prompts, and data sources into a stable graph.
-- Uses OTLP trace parentage to associate model and tool child spans with the correct agent and to avoid duplicate framework-summary model nodes.
-- Includes source-derived compatibility contracts for Dify and Microsoft Agent Framework.
+- Uses OTLP trace parentage across export batches to associate model and tool child spans with the correct agent and to avoid duplicate framework-summary model nodes.
+- Includes source-derived contracts plus executable compatibility checks for Dify and Microsoft Agent Framework.
 - Records evidence as `inferred`, `declared`, `observed`, or `verified`.
 - Exports CycloneDX 1.7 JSON with AI/ML component types and relationships.
 - Compares two evidence graphs to find new, removed, and changed capabilities.
@@ -58,6 +58,17 @@ go build -o ./bin/aiebom ./cmd/aiebom
 ```
 
 The sample policy intentionally rejects the new `shell.execute` capability and exits with status 3.
+
+### Framework compatibility checks
+
+The repository includes deterministic checks that require no model API key or paid call:
+
+```bash
+scripts/live/verify_agent_framework.sh
+scripts/live/verify_dify_instrumentation.sh
+```
+
+The Microsoft check runs the released Agent Framework core, including its real Agent, chat telemetry, function invocation, tool execution, and OTLP exporter paths. The Dify check executes the pinned 1.16.1 OTel workflow handler and node parsers in isolation; it is not a full Dify deployment. Both checks fail on missing graph semantics or sensitive-content leakage. See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) and [the v0.5 validation record](docs/evidence/v0.5.0.md) for exact evidence grades and prerequisites.
 
 ### Live OTLP collection
 
@@ -182,7 +193,7 @@ The normalizer accepts current and common legacy forms including:
 
 Standard `invoke_agent {agent.name}` and `execute_tool {tool.name}` span names are used as fallbacks when an attribute is unavailable. Instrumentation scope name, version, and schema URL are retained as provenance metadata. The implementation tracks the developing [OpenTelemetry GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai) rather than defining a competing telemetry vocabulary.
 
-OTLP `traceId`, `spanId`, and `parentSpanId` are used together during normalization. Explicit `gen_ai.agent.*` identity is inherited by descendant spans in the same trace. For Dify, `dify.app_id` is treated as the stable agent identity and is propagated in the same way.
+OTLP `traceId`, `spanId`, and `parentSpanId` are used together during normalization, including when related spans arrive in separate export requests. Explicit `gen_ai.agent.*` identity is inherited by descendant spans in the same trace. For Dify, `dify.app_id` is treated as the stable agent identity and is propagated in the same way. Unresolved children wait in a bounded metadata-only queue; content-bearing attributes are discarded before queuing.
 
 See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for exact framework coverage and evidence levels, and [docs/SCHEMA.md](docs/SCHEMA.md) for the compact input and graph contracts.
 
@@ -191,7 +202,7 @@ See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for exact framework coverage 
 This project does not currently:
 
 - capture traffic from closed-source clients without instrumentation;
-- ingest OTLP metrics, logs, or profiles; v0.4 deliberately accepts traces only;
+- ingest OTLP metrics, logs, or profiles; v0.5 deliberately accepts traces only;
 - prove which weights a hosted model provider actually served;
 - retain prompt, completion, tool argument, or tool result content;
 - declare a prompt, model, or tool safe;

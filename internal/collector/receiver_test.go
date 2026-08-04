@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
 
+	inputpkg "github.com/Aaron911/ai-evidence-bom/internal/input"
 	"github.com/Aaron911/ai-evidence-bom/internal/model"
 )
 
@@ -107,6 +108,141 @@ func TestReceiverAcceptsAndDeduplicatesOTLPJSON(t *testing.T) {
 	}
 	if stats.Requests != 2 || stats.AcceptedSpans != 1 || stats.DuplicateSpans != 1 {
 		t.Fatalf("unexpected stats: %+v", stats)
+	}
+}
+
+func TestReceiverCorrelatesChildSpansWhenParentArrivesInLaterBatch(t *testing.T) {
+	receiver, err := New(Config{
+		GraphOut: filepath.Join(t.TempDir(), "evidence.json"),
+		Now: func() time.Time {
+			return time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	child := func(spanID, kind string, attributes map[string]string) inputpkg.Observation {
+		attributes["service.name"] = "dify-api"
+		attributes["gen_ai.framework"] = "dify"
+		attributes["gen_ai.span.kind"] = kind
+		return inputpkg.Observation{
+			Timestamp:    time.Date(2026, 8, 4, 11, 59, 59, 0, time.UTC),
+			Level:        model.EvidenceObserved,
+			Source:       "dify-api",
+			TraceID:      "trace-1",
+			SpanID:       spanID,
+			ParentSpanID: "root",
+			Attributes:   attributes,
+		}
+	}
+	llm := child("llm", "LLM", map[string]string{
+		"gen_ai.request.model":  "gpt-5",
+		"gen_ai.provider.name":  "openai",
+		"gen_ai.prompt":         "CROSS_BATCH_PROMPT_MUST_NOT_LEAK",
+		"gen_ai.input.messages": "CROSS_BATCH_INPUT_MUST_NOT_LEAK",
+	})
+	tool := child("tool", "TOOL", map[string]string{
+		"gen_ai.tool.name":           "weather.lookup",
+		"gen_ai.tool.type":           "builtin",
+		"gen_ai.tool.call.arguments": "CROSS_BATCH_ARGUMENT_MUST_NOT_LEAK",
+	})
+	for _, observation := range []inputpkg.Observation{llm, tool} {
+		if err := receiver.accept([]inputpkg.Observation{observation}, "dify-api"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(receiver.graph.Nodes) != 0 || len(receiver.pending) != 2 {
+		t.Fatalf("children should wait for their parent: nodes=%d pending=%d", len(receiver.graph.Nodes), len(receiver.pending))
+	}
+	for _, observation := range receiver.pending {
+		for _, value := range observation.Attributes {
+			if strings.Contains(value, "MUST_NOT_LEAK") {
+				t.Fatalf("pending observation retained sensitive content: %+v", observation.Attributes)
+			}
+		}
+	}
+
+	root := inputpkg.Observation{
+		Timestamp: time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC),
+		Level:     model.EvidenceObserved,
+		Source:    "dify-api",
+		TraceID:   "trace-1",
+		SpanID:    "root",
+		Attributes: map[string]string{
+			"service.name":     "dify-api",
+			"dify.app_id":      "travel-assistant-v1",
+			"dify.workflow_id": "travel-workflow-v1",
+		},
+	}
+	if err := receiver.accept([]inputpkg.Observation{root}, "dify-api"); err != nil {
+		t.Fatal(err)
+	}
+	if len(receiver.pending) != 0 || receiver.stats.PendingSpans != 0 {
+		t.Fatalf("parent did not release pending spans: pending=%d stats=%+v", len(receiver.pending), receiver.stats)
+	}
+
+	seen := make(map[string]bool)
+	for _, node := range receiver.graph.Nodes {
+		seen[node.Type+":"+node.Name] = true
+		if node.Type == "agent" && node.Name == "dify-api" {
+			t.Fatalf("child span was assigned to service fallback instead of Dify app: %+v", node)
+		}
+	}
+	for _, expected := range []string{
+		"agent:travel-assistant-v1",
+		"model:gpt-5",
+		"prompt:system-instructions",
+		"tool:weather.lookup",
+	} {
+		if !seen[expected] {
+			t.Fatalf("missing %s in graph: %+v", expected, receiver.graph.Nodes)
+		}
+	}
+	encoded, err := json.Marshal(receiver.graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte("MUST_NOT_LEAK")) {
+		t.Fatalf("sensitive cross-batch content leaked: %s", encoded)
+	}
+	if receiver.stats.AcceptedSpans != 3 {
+		t.Fatalf("unexpected cross-batch stats: %+v", receiver.stats)
+	}
+}
+
+func TestReceiverBoundsPendingSpansAndTraceContexts(t *testing.T) {
+	receiver, err := New(Config{
+		GraphOut:       filepath.Join(t.TempDir(), "evidence.json"),
+		MaxDedupeItems: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeChild := func(traceID, spanID string) inputpkg.Observation {
+		return inputpkg.Observation{
+			Level:        model.EvidenceObserved,
+			Source:       "bounded-agent",
+			TraceID:      traceID,
+			SpanID:       spanID,
+			ParentSpanID: "missing-parent",
+			Attributes: map[string]string{
+				"service.name":         "bounded-agent",
+				"gen_ai.request.model": "gpt-5",
+			},
+		}
+	}
+	if err := receiver.accept([]inputpkg.Observation{makeChild("trace-1", "child-1")}, "bounded-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if err := receiver.accept([]inputpkg.Observation{makeChild("trace-2", "child-2")}, "bounded-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if len(receiver.pending) != 1 || len(receiver.contexts) > 1 || receiver.stats.PendingSpans != 1 {
+		t.Fatalf("correlation state exceeded configured bound: pending=%d contexts=%d stats=%+v", len(receiver.pending), len(receiver.contexts), receiver.stats)
+	}
+	if len(receiver.graph.Nodes) == 0 {
+		t.Fatal("oldest unresolved metadata was not normalized when the pending queue overflowed")
 	}
 }
 

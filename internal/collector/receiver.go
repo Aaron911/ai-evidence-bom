@@ -55,6 +55,7 @@ type Stats struct {
 	ReceivedSpans  uint64    `json:"receivedSpans"`
 	AcceptedSpans  uint64    `json:"acceptedSpans"`
 	DuplicateSpans uint64    `json:"duplicateSpans"`
+	PendingSpans   uint64    `json:"pendingSpans"`
 	FailedRequests uint64    `json:"failedRequests"`
 	LastAcceptedAt time.Time `json:"lastAcceptedAt,omitempty"`
 }
@@ -70,6 +71,8 @@ type Receiver struct {
 	graph     model.Graph
 	seen      map[string]struct{}
 	seenOrder []string
+	contexts  map[string]normalize.AgentContext
+	pending   []inputpkg.Observation
 	stats     Stats
 }
 
@@ -98,8 +101,9 @@ func New(config Config) (*Receiver, error) {
 		config.Source = "otlp-http"
 	}
 	receiver := &Receiver{
-		config: config,
-		seen:   make(map[string]struct{}),
+		config:   config,
+		seen:     make(map[string]struct{}),
+		contexts: make(map[string]normalize.AgentContext),
 		graph: model.Graph{
 			SchemaVersion: model.SchemaVersion,
 			Source:        config.Source,
@@ -312,17 +316,108 @@ func (receiver *Receiver) accept(observations []inputpkg.Observation, source str
 
 	now := receiver.config.Now().UTC()
 	if len(unique) > 0 {
-		batch := normalize.BuildWithOptions(unique, source, now, normalize.Options{
+		ready := receiver.resolveTraceContexts(unique)
+		receiver.trimTraceContexts()
+		batch := normalize.BuildWithOptions(ready, source, now, normalize.Options{
 			SensitiveHMACKey: receiver.config.SensitiveHMACKey,
 		})
-		receiver.graph = aggregate.Merge(receiver.graph, batch, now)
+		if len(ready) > 0 {
+			receiver.graph = aggregate.Merge(receiver.graph, batch, now)
+		}
 		receiver.stats.AcceptedSpans += uint64(len(unique))
 		receiver.stats.LastAcceptedAt = now
 	}
+	receiver.stats.PendingSpans = uint64(len(receiver.pending))
 	if receiver.graph.GeneratedAt.IsZero() {
 		receiver.graph.GeneratedAt = now
 	}
 	return receiver.persist()
+}
+
+// resolveTraceContexts keeps only a metadata allowlist while waiting for a
+// parent span that may arrive in a later OTLP export request. This prevents a
+// child LLM/tool span from being assigned to service.name before its explicit
+// agent identity is available.
+func (receiver *Receiver) resolveTraceContexts(observations []inputpkg.Observation) []inputpkg.Observation {
+	work := append([]inputpkg.Observation(nil), receiver.pending...)
+	for _, observation := range observations {
+		work = append(work, normalize.MetadataOnlyObservation(observation, receiver.config.SensitiveHMACKey))
+	}
+	type resolvedObservation struct {
+		index   int
+		context normalize.AgentContext
+	}
+	waitingByParent := make(map[string][]int)
+	queue := make([]resolvedObservation, 0, len(work))
+	resolved := make([]bool, len(work))
+	for index, observation := range work {
+		context := normalize.AgentContextFromAttributes(observation.Attributes)
+		if !context.Empty() {
+			queue = append(queue, resolvedObservation{index: index, context: context})
+			continue
+		}
+		if observation.ParentSpanID == "" || observation.TraceID == "" {
+			queue = append(queue, resolvedObservation{index: index})
+			continue
+		}
+		parentKey := strings.ToLower(observation.TraceID) + "\x00" + strings.ToLower(observation.ParentSpanID)
+		if parentContext, known := receiver.contexts[parentKey]; known {
+			queue = append(queue, resolvedObservation{index: index, context: parentContext})
+			continue
+		}
+		waitingByParent[parentKey] = append(waitingByParent[parentKey], index)
+	}
+
+	ready := make([]inputpkg.Observation, 0, len(work))
+	for queueIndex := 0; queueIndex < len(queue); queueIndex++ {
+		item := queue[queueIndex]
+		if resolved[item.index] {
+			continue
+		}
+		observation := work[item.index]
+		if !item.context.Empty() {
+			observation = normalize.ApplyAgentContext(observation, item.context)
+		}
+		work[item.index] = observation
+		resolved[item.index] = true
+		ready = append(ready, observation)
+		spanKey := observationKey(observation)
+		if spanKey == "" {
+			continue
+		}
+		receiver.contexts[spanKey] = item.context
+		for _, childIndex := range waitingByParent[spanKey] {
+			queue = append(queue, resolvedObservation{index: childIndex, context: item.context})
+		}
+		delete(waitingByParent, spanKey)
+	}
+
+	unresolved := make([]inputpkg.Observation, 0, len(work)-len(ready))
+	for index, observation := range work {
+		if !resolved[index] {
+			unresolved = append(unresolved, observation)
+		}
+	}
+
+	if overflow := len(unresolved) - receiver.config.MaxDedupeItems; overflow > 0 {
+		for _, observation := range unresolved[:overflow] {
+			if key := observationKey(observation); key != "" {
+				receiver.contexts[key] = normalize.AgentContext{}
+			}
+		}
+		ready = append(ready, unresolved[:overflow]...)
+		unresolved = unresolved[overflow:]
+	}
+	receiver.pending = unresolved
+	return ready
+}
+
+func (receiver *Receiver) trimTraceContexts() {
+	for key := range receiver.contexts {
+		if _, retained := receiver.seen[key]; !retained {
+			delete(receiver.contexts, key)
+		}
+	}
 }
 
 func (receiver *Receiver) trimDedupe() {
@@ -332,6 +427,7 @@ func (receiver *Receiver) trimDedupe() {
 	}
 	for _, key := range receiver.seenOrder[:overflow] {
 		delete(receiver.seen, key)
+		delete(receiver.contexts, key)
 	}
 	copy(receiver.seenOrder, receiver.seenOrder[overflow:])
 	receiver.seenOrder = receiver.seenOrder[:len(receiver.seenOrder)-overflow]

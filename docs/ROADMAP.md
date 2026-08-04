@@ -17,8 +17,11 @@ This roadmap is organized around falsifiable adoption gates rather than a promis
 - [x] Consume OTLP/HTTP JSON directly with gzip, bounded requests, persistence, and retry deduplication
 - [x] Accept OTLP/HTTP binary protobuf and OTLP/gRPC with matching authentication and privacy behavior
 - [x] Add source-derived contract fixtures for Dify and Microsoft Agent Framework
-- [x] Preserve OTLP parent context so child model and tool spans retain the correct agent identity
+- [x] Preserve OTLP parent context across export batches so child model and tool spans retain the correct agent identity
 - [ ] Validate live exports from two independent framework runtimes
+  - [x] Microsoft Agent Framework released core runtime
+  - [x] Dify isolated instrumentation execution
+  - [ ] Complete Dify application runtime
 - [x] Normalize the core current OpenTelemetry GenAI model, agent, tool, and retrieval attributes
 - [ ] Add fixtures for model calls, MCP tool calls, retrieval, and multi-agent handoff
 - [x] Publish an evidence-graded compatibility matrix

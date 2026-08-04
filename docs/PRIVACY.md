@@ -2,7 +2,7 @@
 
 AI telemetry may contain source code, credentials, personal data, system prompts, retrieved documents, tool parameters, and model responses. The project therefore uses a metadata-only default.
 
-## Never retained by the v0.4 normalizer
+## Never retained by the v0.5 normalizer
 
 - prompt and completion bodies;
 - tool call arguments and results;
@@ -12,7 +12,7 @@ AI telemetry may contain source code, credentials, personal data, system prompts
 
 These attributes may be present in an input OTLP document, but the normalizer does not copy them into the graph.
 
-The Dify and Microsoft Agent Framework contract fixtures intentionally contain marker values in prompt, input, output, tool-argument, and tool-result fields. Automated compatibility tests fail if any marker reaches the normalized graph.
+The Dify and Microsoft Agent Framework contract fixtures and executable checks intentionally contain marker values in prompt, input, output, tool-argument, and tool-result fields. Automated checks fail if any marker reaches the normalized graph or CycloneDX output.
 
 ## Prompt change detection
 
@@ -23,6 +23,8 @@ The key should be random, at least 32 bytes, stored separately from evidence fil
 ## Live receiver behavior
 
 The receiver parses OTLP/HTTP JSON, OTLP/HTTP protobuf, and OTLP/gRPC requests in memory, extracts the same allowlisted metadata from every transport, and discards the raw message. It never writes raw telemetry to disk. Evidence graph and CycloneDX outputs are replaced atomically so readers do not observe partially written JSON.
+
+When a child span arrives before its parent in another export batch, only a bounded allowlist of identity and relationship metadata is queued. Prompt presence is represented as a boolean and, only when configured, a keyed HMAC; prompt/input/output bodies and tool arguments/results are removed before queuing. The current pending count is exposed as `pendingSpans` in `/v1/stats`.
 
 The live endpoints expose metadata that may still be operationally sensitive. Both listeners bind to loopback by default. A non-loopback address requires a bearer-token file, and remote deployments should terminate HTTP and gRPC TLS in a trusted proxy because the built-in servers do not provide TLS.
 

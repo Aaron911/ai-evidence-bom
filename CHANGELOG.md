@@ -4,6 +4,33 @@ All notable changes to this experimental project are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-04
+
+### Added
+
+- A deterministic Microsoft Agent Framework live-capture check using released `agent-framework-core==1.13.0`, real Agent/chat/tool telemetry paths, and OTLP/HTTP protobuf export.
+- A pinned Dify 1.16.1 instrumentation-execution check covering its real workflow handler, LLM parser, tool parser, and OTLP exporter without claiming a full Dify runtime.
+- Bounded cross-request trace-context correlation for child spans that arrive before their parent.
+- A `pendingSpans` live-receiver statistic and regression coverage for child-first export ordering.
+- A reproducible framework validation record with explicit evidence grades and limitations.
+
+### Changed
+
+- Live receiver observations are reduced to a metadata allowlist before they can enter the pending correlation queue.
+- Prompt presence and optional keyed HMAC survive delayed normalization without retaining prompt content.
+- Compatibility claims now distinguish source contract, instrumentation execution, live capture, and production validation.
+
+### Security
+
+- Cross-batch correlation removes prompt/input/output content and tool arguments/results before retaining unresolved child metadata.
+- Both executable framework checks fail if any sensitive marker reaches the evidence graph or CycloneDX BOM.
+
+### Known gaps
+
+- Complete Dify application-runtime capture is still unverified; the local validation executes its instrumentation modules with deterministic host stubs.
+- A child whose parent is missing remains pending until its parent arrives or the bounded queue applies pressure; pending context is not persisted across restarts.
+- Microsoft provider integrations, multi-agent handoff, stable retrieval data-source identity, and stable MCP server identity remain unvalidated.
+
 ## [0.4.0] - 2026-08-04
 
 ### Added
@@ -81,7 +108,8 @@ All notable changes to this experimental project are documented here.
 
 - Initial evidence graph, OTLP JSON file scan, CycloneDX export, diff, policy, prompt HMAC, and Ed25519 signing prototype.
 
-[Unreleased]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.1.0...v0.2.0

@@ -6,10 +6,39 @@ import (
 	inputpkg "github.com/Aaron911/ai-evidence-bom/internal/input"
 )
 
-type traceAgentContext struct {
+type AgentContext struct {
 	id      string
 	name    string
 	version string
+}
+
+func (context AgentContext) Empty() bool {
+	return context.id == "" && context.name == ""
+}
+
+// AgentContextFromAttributes returns only an explicitly identified agent.
+// Service-name fallback is deliberately excluded because it must not override
+// an agent identity that can arrive later on a parent span.
+func AgentContextFromAttributes(attributes map[string]string) AgentContext {
+	return directAgentContext(attributes)
+}
+
+// ApplyAgentContext adds inherited identity to a metadata-only observation.
+func ApplyAgentContext(observation inputpkg.Observation, context AgentContext) inputpkg.Observation {
+	observation.Attributes = clone(observation.Attributes)
+	if observation.Attributes == nil {
+		observation.Attributes = make(map[string]string)
+	}
+	if observation.Attributes["gen_ai.agent.id"] == "" {
+		observation.Attributes["gen_ai.agent.id"] = context.id
+	}
+	if observation.Attributes["gen_ai.agent.name"] == "" {
+		observation.Attributes["gen_ai.agent.name"] = context.name
+	}
+	if observation.Attributes["gen_ai.agent.version"] == "" && context.version != "" {
+		observation.Attributes["gen_ai.agent.version"] = context.version
+	}
+	return observation
 }
 
 // prepareObservations uses OTLP parent links to carry stable agent identity to
@@ -30,15 +59,15 @@ func prepareObservations(input []inputpkg.Observation) []inputpkg.Observation {
 		}
 	}
 
-	resolved := make(map[int]traceAgentContext, len(observations))
+	resolved := make(map[int]AgentContext, len(observations))
 	resolving := make(map[int]bool, len(observations))
-	var resolveAgent func(int) traceAgentContext
-	resolveAgent = func(index int) traceAgentContext {
+	var resolveAgent func(int) AgentContext
+	resolveAgent = func(index int) AgentContext {
 		if context, ok := resolved[index]; ok {
 			return context
 		}
 		if resolving[index] {
-			return traceAgentContext{}
+			return AgentContext{}
 		}
 		resolving[index] = true
 		observation := &observations[index]
@@ -94,8 +123,8 @@ func prepareObservations(input []inputpkg.Observation) []inputpkg.Observation {
 	return observations
 }
 
-func directAgentContext(attributes map[string]string) traceAgentContext {
-	context := traceAgentContext{
+func directAgentContext(attributes map[string]string) AgentContext {
+	context := AgentContext{
 		id:      first(attributes, "gen_ai.agent.id"),
 		name:    first(attributes, "gen_ai.agent.name", "agent.name"),
 		version: first(attributes, "gen_ai.agent.version"),

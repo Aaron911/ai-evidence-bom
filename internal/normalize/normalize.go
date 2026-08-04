@@ -210,14 +210,17 @@ func (b *Builder) addPromptEvidence(agent *model.Node, observation inputpkg.Obse
 	promptName := first(attrs, "gen_ai.prompt.template.name", "gen_ai.prompt.template.id")
 	promptVersion := first(attrs, "gen_ai.prompt.template.version")
 	promptContent := first(attrs, "gen_ai.system_instructions", "gen_ai.prompt")
-	if promptName == "" && promptContent == "" {
+	promptPresent := promptContent != "" || first(attrs, promptContentPresentAttribute) == "true"
+	if promptName == "" && !promptPresent {
 		return
 	}
 	if promptName == "" {
 		promptName = "system-instructions"
 	}
 	digests := make(map[string]string)
-	if promptContent != "" && len(b.options.SensitiveHMACKey) > 0 {
+	if fingerprint := first(attrs, promptHMACAttribute); fingerprint != "" {
+		digests["hmac-sha256"] = fingerprint
+	} else if promptContent != "" && len(b.options.SensitiveHMACKey) > 0 {
 		mac := hmac.New(sha256.New, b.options.SensitiveHMACKey)
 		_, _ = mac.Write([]byte(promptContent))
 		digests["hmac-sha256"] = hex.EncodeToString(mac.Sum(nil))
@@ -229,7 +232,7 @@ func (b *Builder) addPromptEvidence(agent *model.Node, observation inputpkg.Obse
 		Digests: digests,
 		Properties: map[string]string{
 			"content.retained": "false",
-			"content.hashed":   truth(promptContent != "" && len(b.options.SensitiveHMACKey) > 0),
+			"content.hashed":   truth(digests["hmac-sha256"] != ""),
 		},
 	}, observation)
 	if agent != nil {

@@ -1,6 +1,6 @@
 # Runtime OTLP receiver
 
-The `collect` command turns AI Evidence BOM into a small dual-protocol OTLP trace backend. Each accepted request is normalized immediately and merged into durable evidence graph and optional CycloneDX snapshots. JSON and protobuf inputs share one metadata allowlist and produce the same graph contract.
+The `collect` command turns AI Evidence BOM into a small dual-protocol OTLP trace backend. Accepted spans are normalized and merged into a durable evidence graph and optional CycloneDX snapshots. A child whose parent has not arrived yet waits in a bounded metadata-only queue so identity can be correlated across export requests. JSON and protobuf inputs share one metadata allowlist and produce the same graph contract.
 
 ## Start locally
 
@@ -61,7 +61,7 @@ When the Collector runs in a container, replace `127.0.0.1` in the exporter endp
 | `GET /healthz` | Liveness and schema version; intentionally public. |
 | `GET /v1/evidence` | Current evidence graph. |
 | `GET /v1/bom` | Current CycloneDX export. |
-| `GET /v1/stats` | Request, accepted span, duplicate, and failure counters. |
+| `GET /v1/stats` | Request, accepted span, duplicate, pending-span, and failure counters. |
 
 ## Authentication and network exposure
 
@@ -83,6 +83,8 @@ The built-in servers do not terminate TLS. Plaintext is intended only for loopba
 
 - `--max-request-bytes` defaults to 64 MiB. It applies before and after HTTP gzip decompression and to each received gRPC message.
 - `--max-dedupe-items` defaults to 100,000 recent trace/span pairs.
+- The same limit bounds unresolved child spans and retained trace-context entries. If the pending queue reaches the limit, the oldest unresolved metadata is normalized without parent identity rather than growing memory without bound.
+- A child whose parent never arrives remains visible in the `pendingSpans` gauge until it is released by its parent or by queue pressure. Pending context is in memory and resets on restart.
 - Duplicate span retries are acknowledged but do not increase evidence counts, even when a retry changes transport.
 - Deduplication state is in memory and resets on restart.
 - An existing graph at `--graph-out` is loaded so evidence history continues after restart.
@@ -90,6 +92,6 @@ The built-in servers do not terminate TLS. Plaintext is intended only for loopba
 
 ## Protocol scope
 
-v0.4 accepts OTLP trace `ExportTraceServiceRequest` messages over HTTP/JSON, HTTP/protobuf, and gRPC/protobuf. Unknown protobuf fields are discarded for forward compatibility. Resource attributes, instrumentation scope provenance, span attributes, names, timestamps, trace IDs, span IDs, and parent span IDs pass through one normalizer.
+v0.5 accepts OTLP trace `ExportTraceServiceRequest` messages over HTTP/JSON, HTTP/protobuf, and gRPC/protobuf. Unknown protobuf fields are discarded for forward compatibility. Resource attributes, instrumentation scope provenance, span attributes, names, timestamps, trace IDs, span IDs, and parent span IDs pass through one normalizer.
 
 Metrics, logs, and profiles are intentionally not registered or exposed. Partial-success responses are not currently generated: a syntactically valid request is accepted as a whole, while malformed input or persistence failure returns the appropriate HTTP status or gRPC status code.

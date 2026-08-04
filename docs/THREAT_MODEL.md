@@ -15,7 +15,7 @@
 4. Policy authors are trusted to define organizational intent.
 5. Hosted model providers remain outside the verifier's control.
 
-## Addressed through v0.4
+## Addressed through v0.5
 
 - Evidence provenance is explicit rather than collapsing declarations and observations.
 - Prompt and tool content is not retained.
@@ -28,6 +28,7 @@
 - OTLP/HTTP request bodies are limited before and after gzip decompression; OTLP/gRPC receive messages use the same configured limit. The default is 64 MiB.
 - HTTP and gRPC bearer tokens use constant-time comparison and share the same authorization rule.
 - Recent trace/span pairs are deduplicated to prevent common OTLP retries from inflating evidence counts.
+- Cross-batch parent correlation retains only bounded, allowlisted metadata; content fields are removed before an unresolved child is queued.
 - Evidence snapshots are written through atomic replacement rather than in-place truncation.
 
 ## Known limitations
@@ -37,7 +38,8 @@
 - `scan` input files are loaded into memory and do not yet have a configurable size limit; live collection is bounded.
 - The built-in HTTP and gRPC servers do not terminate TLS. Remote use requires a trusted TLS proxy and access controls.
 - Retry deduplication is bounded and in-memory, so its history resets on restart and very old duplicates may be counted again.
-- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.4 protocol scope.
+- A sampled-out or missing parent can leave child metadata pending until queue pressure; monitor `pendingSpans`. Pending context is not persisted across restarts.
+- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.5 protocol scope.
 - There is no sandbox around input parsing.
 - Hosted model aliases and weights cannot be independently verified.
 - Signatures cover raw bytes, not canonical JSON.

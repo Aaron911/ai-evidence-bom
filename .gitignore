@@ -1,7 +1,9 @@
 /bin/
 /work/
+/aiebom
+__pycache__/
+*.py[cod]
 *.pem
 *.key
 *.sig.json
 .DS_Store
-
