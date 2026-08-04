@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"aibom-evidence/internal/model"
+	"github.com/Aaron911/ai-evidence-bom/internal/model"
 )
 
 type BOM struct {

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"aibom-evidence/internal/model"
+	"github.com/Aaron911/ai-evidence-bom/internal/model"
 )
 
 func TestExportMapsModelAndRelations(t *testing.T) {

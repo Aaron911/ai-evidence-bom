@@ -33,7 +33,7 @@ The graph contains:
 - stable `nodes` for agents, models, tools, MCP servers, prompts, and data sources;
 - stable `edges` describing `uses`, `invokes`, `provided_by`, `connects_to`, `reads_from`, and `uses_prompt` relationships.
 
-Node identity is the SHA-256-derived stable key of normalized `type`, `provider`, and `name`. Version is deliberately excluded so an upgrade appears as a changed node rather than a removal and addition.
+Node identity is a SHA-256-derived stable key of normalized `type`, `provider`, and the strongest available identity. A standards-defined ID such as `gen_ai.agent.id` is preferred; display name is the fallback. Version is deliberately excluded so an upgrade appears as a changed node rather than a removal and addition.
 
 Each node and edge has an evidence summary:
 
@@ -48,7 +48,11 @@ Each node and edge has an evidence summary:
 }
 ```
 
-At most 20 trace identifiers are retained per node or edge in v0.1. Observation counts continue increasing after that cap.
+At most 20 trace identifiers are retained per node or edge in v0.2. Observation counts continue increasing after that cap.
+
+Continuous collection merges snapshots by stable node and edge identity. It preserves the strongest evidence level, earliest and latest observation time, all observed versions, and cumulative observation counts. The latest timestamp wins when version or property values conflict.
+
+OTLP instrumentation scope name, version, and schema URL are retained on relevant nodes as provenance. Unknown OTLP fields are ignored as required by the OTLP JSON mapping; arbitrary attributes are not copied into output properties.
 
 ## CycloneDX mapping
 
@@ -61,4 +65,3 @@ At most 20 trace identifiers are retained per node or edge in v0.1. Observation 
 | agent, tool, MCP server | `application` |
 
 Evidence-specific fields are exported as namespaced CycloneDX properties beginning with `aibom:`.
-

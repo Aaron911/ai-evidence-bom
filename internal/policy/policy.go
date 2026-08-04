@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"aibom-evidence/internal/model"
+	"github.com/Aaron911/ai-evidence-bom/internal/model"
 )
 
 type Policy struct {

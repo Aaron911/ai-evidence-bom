@@ -15,7 +15,7 @@
 4. Policy authors are trusted to define organizational intent.
 5. Hosted model providers remain outside the verifier's control.
 
-## Addressed in v0.1
+## Addressed in v0.2
 
 - Evidence provenance is explicit rather than collapsing declarations and observations.
 - Prompt and tool content is not retained.
@@ -24,16 +24,22 @@
 - Exact evidence files can be signed with Ed25519 and verified later.
 - Policy failures use a distinct exit code for CI.
 - Key generation refuses to overwrite existing key files.
+- The live receiver defaults to loopback, requires a bearer token for non-loopback binds, and compares tokens in constant time.
+- OTLP/HTTP request bodies are limited before and after gzip decompression; the default is 64 MiB.
+- Recent trace/span pairs are deduplicated to prevent common OTLP retries from inflating evidence counts.
+- Evidence snapshots are written through atomic replacement rather than in-place truncation.
 
 ## Known limitations
 
 - An observed trace proves only that an instrumented component reported an event; it does not prove the event is truthful.
 - `verified` currently trusts an upstream `*.signature.verified=true` assertion. Independent OpenSSF Model Signing verification is planned.
-- Inputs are loaded into memory and do not yet have a configurable size limit.
+- `scan` input files are loaded into memory and do not yet have a configurable size limit; live collection is bounded.
+- The built-in HTTP server does not terminate TLS. Remote use requires a trusted TLS proxy and access controls.
+- Retry deduplication is bounded and in-memory, so its history resets on restart and very old duplicates may be counted again.
+- OTLP binary protobuf and gRPC are not accepted in v0.2.
 - There is no sandbox around input parsing.
 - Hosted model aliases and weights cannot be independently verified.
 - Signatures cover raw bytes, not canonical JSON.
 - The policy language is intentionally small and does not yet reason over paths or aggregate behavior.
 
 Security issues should follow [SECURITY.md](../SECURITY.md), not a public issue containing sensitive reproduction material.
-

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	inputpkg "aibom-evidence/internal/input"
-	"aibom-evidence/internal/model"
+	inputpkg "github.com/Aaron911/ai-evidence-bom/internal/input"
+	"github.com/Aaron911/ai-evidence-bom/internal/model"
 )
 
 func TestBuildHashesButDoesNotRetainPrompt(t *testing.T) {
@@ -42,5 +42,39 @@ func TestBuildHashesButDoesNotRetainPrompt(t *testing.T) {
 	}
 	if !foundPrompt {
 		t.Fatal("prompt evidence node not found")
+	}
+}
+
+func TestBuildInfersStandardAgentAndToolSpanNames(t *testing.T) {
+	timestamp := time.Unix(100, 0).UTC()
+	graph := Build([]inputpkg.Observation{
+		{
+			Timestamp: timestamp,
+			Level:     model.EvidenceObserved,
+			Source:    "demo",
+			Attributes: map[string]string{
+				"service.name":          "orchestrator",
+				"gen_ai.operation.name": "invoke_agent",
+				"otel.span.name":        "invoke_agent reviewer",
+			},
+		},
+		{
+			Timestamp: timestamp,
+			Level:     model.EvidenceObserved,
+			Source:    "demo",
+			Attributes: map[string]string{
+				"service.name":          "orchestrator",
+				"gen_ai.operation.name": "execute_tool",
+				"otel.span.name":        "execute_tool search",
+			},
+		},
+	}, "demo", timestamp)
+	var foundAgent, foundTool bool
+	for _, node := range graph.Nodes {
+		foundAgent = foundAgent || node.Type == "agent" && node.Name == "reviewer"
+		foundTool = foundTool || node.Type == "tool" && node.Name == "search"
+	}
+	if !foundAgent || !foundTool {
+		t.Fatalf("standard span names were not normalized: %+v", graph.Nodes)
 	}
 }

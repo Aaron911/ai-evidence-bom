@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	inputpkg "aibom-evidence/internal/input"
-	"aibom-evidence/internal/model"
+	inputpkg "github.com/Aaron911/ai-evidence-bom/internal/input"
+	"github.com/Aaron911/ai-evidence-bom/internal/model"
 )
 
 type Builder struct {
@@ -58,6 +58,8 @@ func BuildWithOptions(observations []inputpkg.Observation, source string, genera
 
 func (b *Builder) addObservation(observation inputpkg.Observation) {
 	attrs := observation.Attributes
+	operation := first(attrs, "gen_ai.operation.name")
+	spanName := first(attrs, "otel.span.name")
 	provider := first(attrs,
 		"gen_ai.provider.name",
 		"gen_ai.system",
@@ -65,6 +67,9 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 	)
 	serviceName := first(attrs, "service.name", "service.namespace", "host.name")
 	agentName := first(attrs, "gen_ai.agent.name", "agent.name")
+	if agentName == "" && operation == "invoke_agent" {
+		agentName = spanEntityName(spanName, "invoke_agent")
+	}
 	if agentName == "" && hasGenAIAttributes(attrs) {
 		agentName = serviceName
 	}
@@ -76,9 +81,10 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 		agent = b.addNode(nodeInput{
 			Type:       "agent",
 			Name:       agentName,
+			Identity:   firstNonEmpty(first(attrs, "gen_ai.agent.id"), agentName),
 			Version:    agentVersion,
 			Provider:   agentProvider,
-			Properties: selected(attrs, "gen_ai.agent.id", "deployment.environment.name", "service.namespace"),
+			Properties: selected(attrs, "gen_ai.agent.id", "deployment.environment.name", "service.namespace", "otel.scope.name", "otel.scope.version", "otel.scope.schema_url"),
 		}, observation)
 	}
 
@@ -110,6 +116,11 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 				"gen_ai.operation.name",
 				"gen_ai.request.encoding_formats",
 				"gen_ai.response.finish_reasons",
+				"server.address",
+				"server.port",
+				"otel.scope.name",
+				"otel.scope.version",
+				"otel.scope.schema_url",
 			),
 		}, modelObservation)
 		if agent != nil {
@@ -123,6 +134,7 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 		mcpNode = b.addNode(nodeInput{
 			Type:       "mcp_server",
 			Name:       mcpName,
+			Identity:   firstNonEmpty(first(attrs, "mcp.server.id"), mcpName),
 			Version:    first(attrs, "mcp.server.version"),
 			Provider:   first(attrs, "mcp.server.provider"),
 			Properties: selected(attrs, "mcp.server.url", "mcp.transport", "server.address", "server.port"),
@@ -138,6 +150,9 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 		"tool.name",
 		"mcp.tool.name",
 	)
+	if toolName == "" && operation == "execute_tool" {
+		toolName = spanEntityName(spanName, "execute_tool")
+	}
 	if toolName != "" {
 		toolNode := b.addNode(nodeInput{
 			Type:       "tool",
@@ -210,6 +225,7 @@ func (b *Builder) addPromptEvidence(agent *model.Node, observation inputpkg.Obse
 type nodeInput struct {
 	Type       string
 	Name       string
+	Identity   string
 	Version    string
 	Provider   string
 	Digests    map[string]string
@@ -217,7 +233,8 @@ type nodeInput struct {
 }
 
 func (b *Builder) addNode(value nodeInput, observation inputpkg.Observation) *model.Node {
-	id := model.StableNodeID(value.Type, value.Provider, value.Name)
+	identity := firstNonEmpty(value.Identity, value.Name)
+	id := model.StableNodeID(value.Type, value.Provider, identity)
 	node, exists := b.nodes[id]
 	if !exists {
 		node = &model.Node{
@@ -331,6 +348,15 @@ func truth(value bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func spanEntityName(spanName, operation string) string {
+	spanName = strings.TrimSpace(spanName)
+	prefix := operation + " "
+	if strings.HasPrefix(spanName, prefix) {
+		return strings.TrimSpace(strings.TrimPrefix(spanName, prefix))
+	}
+	return ""
 }
 
 // SortVersions is exported for tests and adapters that merge graphs.

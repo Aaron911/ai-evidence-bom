@@ -1,29 +1,36 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
-	"aibom-evidence/internal/cyclonedx"
-	"aibom-evidence/internal/graphdiff"
-	inputpkg "aibom-evidence/internal/input"
-	"aibom-evidence/internal/model"
-	"aibom-evidence/internal/normalize"
-	"aibom-evidence/internal/policy"
-	"aibom-evidence/internal/signing"
+	"github.com/Aaron911/ai-evidence-bom/internal/collector"
+	"github.com/Aaron911/ai-evidence-bom/internal/cyclonedx"
+	"github.com/Aaron911/ai-evidence-bom/internal/graphdiff"
+	inputpkg "github.com/Aaron911/ai-evidence-bom/internal/input"
+	"github.com/Aaron911/ai-evidence-bom/internal/model"
+	"github.com/Aaron911/ai-evidence-bom/internal/normalize"
+	"github.com/Aaron911/ai-evidence-bom/internal/policy"
+	"github.com/Aaron911/ai-evidence-bom/internal/signing"
 )
 
 const usageText = `AI Evidence BOM
 
 Usage:
   aiebom scan    --input traces.json --graph-out evidence.json [--bom-out bom.cdx.json]
+  aiebom collect --graph-out evidence.json [--bom-out bom.cdx.json] [--listen 127.0.0.1:4318]
   aiebom export  --input evidence.json --output bom.cdx.json
   aiebom diff    --before old.json --after new.json --output diff.json [--fail-on-change]
   aiebom policy  --input evidence.json --policy policy.json --output report.json
@@ -32,7 +39,8 @@ Usage:
   aiebom verify  --input evidence.json --public-key public.pem --signature evidence.sig.json
 
 Inputs to scan may be compact observation JSON or OTLP JSON with resourceSpans.
-Prompt and tool-call content is not retained; system instructions are represented only by SHA-256.
+Collect accepts OTLP/HTTP JSON trace requests at POST /v1/traces.
+Prompt and tool-call content is not retained; optional prompt fingerprints use keyed HMAC-SHA-256.
 `
 
 func main() {
@@ -44,6 +52,8 @@ func main() {
 	switch os.Args[1] {
 	case "scan":
 		err = runScan(os.Args[2:])
+	case "collect":
+		err = runCollect(os.Args[2:])
 	case "export":
 		err = runExport(os.Args[2:])
 	case "diff":
@@ -74,6 +84,109 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+func runCollect(args []string) error {
+	flags := flag.NewFlagSet("collect", flag.ContinueOnError)
+	listenAddress := flags.String("listen", "127.0.0.1:4318", "OTLP/HTTP listen address")
+	graphOut := flags.String("graph-out", "", "continuously updated evidence graph JSON")
+	bomOut := flags.String("bom-out", "", "optional continuously updated CycloneDX JSON")
+	source := flags.String("source", "otlp-http", "receiver source name")
+	authTokenPath := flags.String("auth-token-file", "", "optional bearer token file")
+	hmacKeyPath := flags.String("sensitive-hmac-key-file", "", "optional key for privacy-preserving prompt fingerprints")
+	maxRequestBytes := flags.Int64("max-request-bytes", collector.DefaultMaxRequestBytes, "maximum request bytes before and after decompression")
+	maxDedupeItems := flags.Int("max-dedupe-items", collector.DefaultMaxDedupeItems, "recent span IDs retained for retry deduplication")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if *graphOut == "" {
+		return fmt.Errorf("collect requires --graph-out")
+	}
+
+	authToken := ""
+	if *authTokenPath != "" {
+		data, err := os.ReadFile(*authTokenPath)
+		if err != nil {
+			return fmt.Errorf("read auth token: %w", err)
+		}
+		authToken = strings.TrimSpace(string(data))
+		if authToken == "" {
+			return fmt.Errorf("auth token file must not be empty")
+		}
+	}
+	if !isLoopbackListen(*listenAddress) && authToken == "" {
+		return fmt.Errorf("non-loopback listen address requires --auth-token-file")
+	}
+
+	var sensitiveHMACKey []byte
+	if *hmacKeyPath != "" {
+		var err error
+		sensitiveHMACKey, err = os.ReadFile(*hmacKeyPath)
+		if err != nil {
+			return fmt.Errorf("read sensitive HMAC key: %w", err)
+		}
+		if len(sensitiveHMACKey) < 32 {
+			return fmt.Errorf("sensitive HMAC key must contain at least 32 bytes")
+		}
+	}
+
+	receiver, err := collector.New(collector.Config{
+		GraphOut:         *graphOut,
+		BOMOut:           *bomOut,
+		Source:           *source,
+		AuthToken:        authToken,
+		SensitiveHMACKey: sensitiveHMACKey,
+		MaxRequestBytes:  *maxRequestBytes,
+		MaxDedupeItems:   *maxDedupeItems,
+	})
+	if err != nil {
+		return err
+	}
+	server := &http.Server{
+		Addr:              *listenAddress,
+		Handler:           receiver,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    1 << 20,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	errorsChannel := make(chan error, 1)
+	go func() {
+		fmt.Fprintf(os.Stderr, "listening for OTLP/HTTP JSON traces on http://%s/v1/traces\n", *listenAddress)
+		err := server.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errorsChannel <- err
+		}
+	}()
+
+	select {
+	case err := <-errorsChannel:
+		return fmt.Errorf("serve OTLP/HTTP: %w", err)
+	case <-ctx.Done():
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownContext); err != nil {
+			return fmt.Errorf("shutdown OTLP/HTTP receiver: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, "collector stopped")
+		return nil
+	}
+}
+
+func isLoopbackListen(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 type exitError struct {

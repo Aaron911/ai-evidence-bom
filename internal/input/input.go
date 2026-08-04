@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"aibom-evidence/internal/model"
+	"github.com/Aaron911/ai-evidence-bom/internal/model"
 )
 
 type Observation struct {
@@ -43,7 +43,7 @@ func Parse(data []byte, fallbackSource string) ([]Observation, string, error) {
 		return parseSimple(data, fallbackSource)
 	}
 	if _, ok := probe["resourceSpans"]; ok {
-		return parseOTLP(data, fallbackSource)
+		return ParseOTLP(data, fallbackSource)
 	}
 	return nil, "", fmt.Errorf("unsupported input: expected observations or resourceSpans")
 }
@@ -83,6 +83,7 @@ type otlpDocument struct {
 type otlpResourceSpans struct {
 	Resource   otlpResource     `json:"resource"`
 	ScopeSpans []otlpScopeSpans `json:"scopeSpans"`
+	SchemaURL  string           `json:"schemaUrl"`
 }
 
 type otlpResource struct {
@@ -90,7 +91,15 @@ type otlpResource struct {
 }
 
 type otlpScopeSpans struct {
-	Spans []otlpSpan `json:"spans"`
+	Spans     []otlpSpan `json:"spans"`
+	Scope     otlpScope  `json:"scope"`
+	SchemaURL string     `json:"schemaUrl"`
+}
+
+type otlpScope struct {
+	Name       string         `json:"name"`
+	Version    string         `json:"version"`
+	Attributes []otlpKeyValue `json:"attributes"`
 }
 
 type otlpSpan struct {
@@ -124,7 +133,9 @@ type otlpKVListValue struct {
 	Values []otlpKeyValue `json:"values"`
 }
 
-func parseOTLP(data []byte, fallbackSource string) ([]Observation, string, error) {
+// ParseOTLP parses an OTLP ExportTraceServiceRequest encoded using the OTLP
+// JSON mapping. An empty JSON message is a valid request with zero spans.
+func ParseOTLP(data []byte, fallbackSource string) ([]Observation, string, error) {
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.UseNumber()
 	var doc otlpDocument
@@ -135,13 +146,16 @@ func parseOTLP(data []byte, fallbackSource string) ([]Observation, string, error
 	documentSource := fallbackSource
 	for _, resourceSpans := range doc.ResourceSpans {
 		resourceAttrs := attributes(resourceSpans.Resource.Attributes)
+		if resourceSpans.SchemaURL != "" {
+			resourceAttrs["otel.resource.schema_url"] = resourceSpans.SchemaURL
+		}
 		serviceName := firstNonEmpty(resourceAttrs["service.name"], fallbackSource, "otlp")
 		if documentSource == "" {
 			documentSource = serviceName
 		}
 		for _, scopeSpans := range resourceSpans.ScopeSpans {
 			for _, span := range scopeSpans.Spans {
-				attrs := make(map[string]string, len(resourceAttrs)+len(span.Attributes)+1)
+				attrs := make(map[string]string, len(resourceAttrs)+len(span.Attributes)+5)
 				for key, value := range resourceAttrs {
 					attrs[key] = value
 				}
@@ -149,6 +163,15 @@ func parseOTLP(data []byte, fallbackSource string) ([]Observation, string, error
 					attrs[key] = value
 				}
 				attrs["otel.span.name"] = span.Name
+				if scopeSpans.Scope.Name != "" {
+					attrs["otel.scope.name"] = scopeSpans.Scope.Name
+				}
+				if scopeSpans.Scope.Version != "" {
+					attrs["otel.scope.version"] = scopeSpans.Scope.Version
+				}
+				if scopeSpans.SchemaURL != "" {
+					attrs["otel.scope.schema_url"] = scopeSpans.SchemaURL
+				}
 				observations = append(observations, Observation{
 					Timestamp:  nanoTime(span.StartTimeUnixNano),
 					Level:      model.EvidenceObserved,

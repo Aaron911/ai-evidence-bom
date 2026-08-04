@@ -6,11 +6,12 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 
 > 实际运行时观察到了哪些 Agent、模型、工具、MCP Server、Prompt 和数据源，它们后来发生了什么变化？
 
-当前为实验性 v0.1，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
+当前为实验性 v0.2，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
 
 ## 当前能力
 
 - 读取 OTLP JSON 和简化的 observation JSON；
+- 通过 `/v1/traces` 持续接收 OTLP/HTTP JSON，并原子更新证据快照；
 - 构建厂商中立的 Agent 证据关系图；
 - 区分 `inferred`、`declared`、`observed`、`verified` 四级证据；
 - 导出 CycloneDX 1.7；
@@ -18,8 +19,15 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 - 使用 JSON 策略作为 CI 门禁；
 - 使用 Ed25519 签名并验证证据文件；
 - 默认只处理元数据，不保存 Prompt、响应、工具参数或工具结果。
+- 对在线请求限制大小，支持 gzip、可选 Bearer Token，并去除近期重复 span。
 
 ## 快速体验
+
+```bash
+go install github.com/Aaron911/ai-evidence-bom/cmd/aiebom@latest
+```
+
+或者在源码目录构建：
 
 ```bash
 go build -o ./bin/aiebom ./cmd/aiebom
@@ -47,5 +55,28 @@ go build -o ./bin/aiebom ./cmd/aiebom
 
 示例策略会故意拒绝新出现的 `shell.execute` 能力，并以状态码 3 退出。
 
-完整使用方法、架构和项目边界请查看英文 [README.md](README.md)。
+## 在线采集
 
+启动仅监听本机的接收器：
+
+```bash
+./bin/aiebom collect \
+  --listen 127.0.0.1:4318 \
+  --graph-out work/live.evidence.json \
+  --bom-out work/live.cdx.json
+```
+
+发送示例 OTLP JSON：
+
+```bash
+curl --fail-with-body \
+  -H 'Content-Type: application/json' \
+  --data-binary @examples/otlp-before.json \
+  http://127.0.0.1:4318/v1/traces
+```
+
+可通过 `GET /healthz` 检查健康状态，并通过 `/v1/evidence`、`/v1/bom`、`/v1/stats` 查看实时结果。鉴权、请求限制和已知协议缺口见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。
+
+v0.2 目前只接收 **OTLP/HTTP JSON**；二进制 protobuf 和 OTLP/gRPC 尚未支持，不能把默认使用 protobuf 的 Collector exporter 直接指向它。
+
+完整使用方法、架构和项目边界请查看英文 [README.md](README.md)。
