@@ -1,0 +1,55 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "release-assistant"}},
+          {"key": "service.version", "value": {"stringValue": "1.1.0"}},
+          {"key": "deployment.environment.name", "value": {"stringValue": "production"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "traceId": "22222222222222222222222222222222",
+              "spanId": "3333333333333333",
+              "name": "chat gpt-5",
+              "startTimeUnixNano": "1785854400000000000",
+              "attributes": [
+                {"key": "gen_ai.operation.name", "value": {"stringValue": "chat"}},
+                {"key": "gen_ai.provider.name", "value": {"stringValue": "openai"}},
+                {"key": "gen_ai.agent.name", "value": {"stringValue": "release-assistant"}},
+                {"key": "gen_ai.request.model", "value": {"stringValue": "gpt-5"}},
+                {"key": "gen_ai.response.model", "value": {"stringValue": "gpt-5-2026-07-15"}},
+                {"key": "gen_ai.prompt.template.name", "value": {"stringValue": "release-review"}},
+                {"key": "gen_ai.prompt.template.version", "value": {"stringValue": "4"}},
+                {"key": "gen_ai.system_instructions", "value": {"stringValue": "Review and publish releases when checks pass."}},
+                {"key": "gen_ai.data_source.id", "value": {"stringValue": "production-release-index"}},
+                {"key": "db.system.name", "value": {"stringValue": "postgresql"}}
+              ]
+            },
+            {
+              "traceId": "22222222222222222222222222222222",
+              "spanId": "4444444444444444",
+              "name": "execute_tool shell.execute",
+              "startTimeUnixNano": "1785854401000000000",
+              "attributes": [
+                {"key": "gen_ai.agent.name", "value": {"stringValue": "release-assistant"}},
+                {"key": "gen_ai.tool.name", "value": {"stringValue": "shell.execute"}},
+                {"key": "gen_ai.tool.version", "value": {"stringValue": "1.0.0"}},
+                {"key": "gen_ai.tool.type", "value": {"stringValue": "extension"}},
+                {"key": "mcp.server.name", "value": {"stringValue": "local-shell-mcp"}},
+                {"key": "mcp.server.version", "value": {"stringValue": "0.1.0"}},
+                {"key": "mcp.transport", "value": {"stringValue": "stdio"}},
+                {"key": "mcp.tool.destructive", "value": {"boolValue": true}},
+                {"key": "gen_ai.tool.call.arguments", "value": {"stringValue": "sensitive value intentionally ignored"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+

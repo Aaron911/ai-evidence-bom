@@ -1,0 +1,7 @@
+/bin/
+/work/
+*.pem
+*.key
+*.sig.json
+.DS_Store
+

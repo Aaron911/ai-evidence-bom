@@ -1,0 +1,13 @@
+{
+  "version": "0.1.0",
+  "minimumEvidence": {
+    "model": "observed",
+    "mcp_server": "observed",
+    "tool": "observed"
+  },
+  "allowedProviders": ["openai", "github-mcp", "local-shell-mcp", "postgresql"],
+  "requireProvidersFor": ["model", "tool", "data_source"],
+  "deniedNamePatterns": ["(?i)(^|[._-])(shell|execute)([._-]|$)"],
+  "requireVersionsFor": ["model", "mcp_server", "tool"],
+  "forbidInferred": true
+}

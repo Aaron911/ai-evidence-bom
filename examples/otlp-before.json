@@ -1,0 +1,52 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "release-assistant"}},
+          {"key": "service.version", "value": {"stringValue": "1.0.0"}},
+          {"key": "deployment.environment.name", "value": {"stringValue": "staging"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "1111111111111111",
+              "name": "chat gpt-5",
+              "startTimeUnixNano": "1785768000000000000",
+              "attributes": [
+                {"key": "gen_ai.operation.name", "value": {"stringValue": "chat"}},
+                {"key": "gen_ai.provider.name", "value": {"stringValue": "openai"}},
+                {"key": "gen_ai.agent.name", "value": {"stringValue": "release-assistant"}},
+                {"key": "gen_ai.request.model", "value": {"stringValue": "gpt-5"}},
+                {"key": "gen_ai.response.model", "value": {"stringValue": "gpt-5-2026-06-01"}},
+                {"key": "gen_ai.prompt.template.name", "value": {"stringValue": "release-review"}},
+                {"key": "gen_ai.prompt.template.version", "value": {"stringValue": "3"}},
+                {"key": "gen_ai.system_instructions", "value": {"stringValue": "Review releases but never publish without approval."}}
+              ]
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "2222222222222222",
+              "name": "execute_tool github.get_pull_request",
+              "startTimeUnixNano": "1785768001000000000",
+              "attributes": [
+                {"key": "gen_ai.agent.name", "value": {"stringValue": "release-assistant"}},
+                {"key": "gen_ai.tool.name", "value": {"stringValue": "github.get_pull_request"}},
+                {"key": "gen_ai.tool.version", "value": {"stringValue": "1.2.0"}},
+                {"key": "gen_ai.tool.type", "value": {"stringValue": "extension"}},
+                {"key": "mcp.server.name", "value": {"stringValue": "github-mcp"}},
+                {"key": "mcp.server.version", "value": {"stringValue": "0.20.0"}},
+                {"key": "mcp.transport", "value": {"stringValue": "stdio"}},
+                {"key": "mcp.tool.read_only", "value": {"boolValue": true}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
