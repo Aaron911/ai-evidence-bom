@@ -18,15 +18,15 @@ This roadmap is organized around falsifiable adoption gates rather than a promis
 - [x] Accept OTLP/HTTP binary protobuf and OTLP/gRPC with matching authentication and privacy behavior
 - [x] Add source-derived contract fixtures for Dify and Microsoft Agent Framework
 - [x] Preserve OTLP parent context across export batches so child model and tool spans retain the correct agent identity
-- [ ] Validate live exports from two independent framework runtimes
+- [x] Validate live exports from two independent framework runtimes
   - [x] Microsoft Agent Framework released core runtime
   - [x] Dify isolated instrumentation execution
-  - [ ] Complete Dify application runtime
+  - [x] Complete Dify application runtime
 - [x] Normalize the core current OpenTelemetry GenAI model, agent, tool, and retrieval attributes
 - [ ] Add fixtures for model calls, MCP tool calls, retrieval, and multi-agent handoff
 - [x] Publish an evidence-graded compatibility matrix
 
-Exit gate: live exports from two unrelated frameworks produce the same core graph semantics for equivalent behavior. Source-derived fixtures are an intermediate gate, not completion of this phase.
+Exit gate: live exports from two unrelated frameworks produce the same core graph semantics for equivalent behavior. **The core exit gate passed in v0.6.** Retrieval, MCP, and multi-agent fixtures remain useful coverage work, but they no longer block beginning Phase 2 evidence-quality validation.
 
 ## Phase 2 — evidence quality
 

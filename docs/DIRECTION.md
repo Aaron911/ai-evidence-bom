@@ -83,6 +83,38 @@ The test passes only if:
 
 If that cannot be made deterministic at reasonable CI cost, record the blocker and move the check to a documented periodic manual environment rather than weakening the evidence grade.
 
+## v0.6 calibration — 2026-08-04
+
+### Uncertainty tested
+
+Can a complete official Dify application runtime emit stable agent, model, and tool evidence through its supported OTLP configuration, without patching Dify or introducing a private telemetry adapter?
+
+### Evidence gained
+
+- A pinned Dify 1.16.1 API, plugin daemon, PostgreSQL, and Redis stack imported, published, and executed a workflow containing an LLM node and a built-in tool node.
+- With Dify's supported OTel settings enabled, unmodified OTLP/HTTP protobuf reached `aiebom collect`. The graph contained exactly one agent identified by `dify.app_id`, OpenAI `gpt-4o`, `time.current_time`, a content-free prompt node, and `uses`, `invokes`, and `uses_prompt` relationships.
+- Prompt, input, model output, tool argument, and tool output markers did not reach the graph or CycloneDX BOM.
+- The first CI attempt failed usefully: the Dify container could not resolve the Marketplace host while installing the plugin, and failure cleanup did not terminate promptly. The final check downloads a fixed official plugin package on the host, verifies its SHA-256, uploads it through Dify's supported API, and bounds cleanup time. This makes setup deterministic without changing Dify telemetry behavior.
+- Together with the released Microsoft Agent Framework core-runtime check, two unrelated runtimes now reach the same vendor-neutral core graph semantics through standard OTLP. The Phase 1 core exit gate is therefore passed.
+
+### Decision
+
+**Continue and move the primary focus to evidence quality.** The standards-first thesis passed its core adoption test. The project should not respond by collecting framework logos, building a dashboard, or adding generic vulnerability feeds. Optional retrieval, MCP, and multi-agent coverage remains open, but new work should be selected for security value and its ability to falsify graph or policy claims.
+
+### Risks and pivot signals
+
+- Full Dify validation is heavier than the isolated check and depends on Docker plus availability of pinned upstream source and plugin artifacts. Keep the fast check in ordinary CI and the full stack in a separate scheduled and path-triggered workflow.
+- Dify can emit content-bearing telemetry when configured to do so. Metadata-only filtering at the receiver remains a security boundary; this result does not make upstream traces safe to store elsewhere.
+- One deterministic workflow is live capture, not production validation. Do not claim coverage of every Dify node, provider, deployment mode, or operational limit.
+- If upstream semantic conventions repeatedly break stable identity or require framework-specific transport code, measure that maintenance cost and reconsider the adapter boundary.
+- If real operators will not enable OTel or cannot route OTLP safely, validate a narrow auto-instrumentation launcher before making any zero-code claim.
+
+### Next smallest falsifiable test
+
+Execute one real MCP client/server tool call with standard telemetry and a stable, non-content-derived server identity. Capture a baseline and a changed server capability set, then verify that graph diff and a graph-path policy detect the new capability without retaining arguments or results.
+
+The test fails if server identity can only be guessed from tool text or network content, if the capability change cannot be tied to the invoking agent, or if policy evaluation requires a framework-specific private transport. A failure should be recorded as an MCP telemetry-standard gap before adding an adapter.
+
 ## Release calibration template
 
 For each later release, append a dated section containing:

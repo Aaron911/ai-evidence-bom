@@ -2,7 +2,7 @@
 
 AI telemetry may contain source code, credentials, personal data, system prompts, retrieved documents, tool parameters, and model responses. The project therefore uses a metadata-only default.
 
-## Never retained by the v0.5 normalizer
+## Never retained by the v0.6 normalizer
 
 - prompt and completion bodies;
 - tool call arguments and results;

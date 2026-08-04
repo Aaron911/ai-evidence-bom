@@ -54,7 +54,7 @@ Each node and edge has an evidence summary:
 }
 ```
 
-At most 20 trace identifiers are retained per node or edge in v0.5. Observation counts continue increasing after that cap.
+At most 20 trace identifiers are retained per node or edge in v0.6. Observation counts continue increasing after that cap.
 
 Continuous collection merges snapshots by stable node and edge identity. It preserves the strongest evidence level, earliest and latest observation time, all observed versions, and cumulative observation counts. The latest timestamp wins when version or property values conflict.
 

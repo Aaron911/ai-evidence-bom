@@ -15,7 +15,7 @@
 4. Policy authors are trusted to define organizational intent.
 5. Hosted model providers remain outside the verifier's control.
 
-## Addressed through v0.5
+## Addressed through v0.6
 
 - Evidence provenance is explicit rather than collapsing declarations and observations.
 - Prompt and tool content is not retained.
@@ -39,7 +39,7 @@
 - The built-in HTTP and gRPC servers do not terminate TLS. Remote use requires a trusted TLS proxy and access controls.
 - Retry deduplication is bounded and in-memory, so its history resets on restart and very old duplicates may be counted again.
 - A sampled-out or missing parent can leave child metadata pending until queue pressure; monitor `pendingSpans`. Pending context is not persisted across restarts.
-- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.5 protocol scope.
+- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.6 protocol scope.
 - There is no sandbox around input parsing.
 - Hosted model aliases and weights cannot be independently verified.
 - Signatures cover raw bytes, not canonical JSON.

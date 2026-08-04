@@ -6,7 +6,7 @@ It answers a narrower question than an ordinary scanner:
 
 > What models, agents, tools, MCP servers, prompts, and data sources were actually observed at runtime, and how did that set change?
 
-The project is an experimental v0.5 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
+The project is an experimental v0.6 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
 
 ## Current capabilities
 
@@ -66,9 +66,10 @@ The repository includes deterministic checks that require no model API key or pa
 ```bash
 scripts/live/verify_agent_framework.sh
 scripts/live/verify_dify_instrumentation.sh
+scripts/live/verify_dify_runtime.sh
 ```
 
-The Microsoft check runs the released Agent Framework core, including its real Agent, chat telemetry, function invocation, tool execution, and OTLP exporter paths. The Dify check executes the pinned 1.16.1 OTel workflow handler and node parsers in isolation; it is not a full Dify deployment. Both checks fail on missing graph semantics or sensitive-content leakage. See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) and [the v0.5 validation record](docs/evidence/v0.5.0.md) for exact evidence grades and prerequisites.
+The Microsoft check runs the released Agent Framework core, including its real Agent, chat telemetry, function invocation, tool execution, and OTLP exporter paths. The lightweight Dify check executes the pinned 1.16.1 OTel workflow handler and node parsers in isolation. The third check starts an official minimal Dify application stack, installs a checksum-pinned official OpenAI plugin package, imports and runs an LLM-plus-tool workflow against a deterministic local substitute, and verifies the unmodified OTLP export. It requires Docker and cold-run network access, but no model API key or paid call. All checks fail on missing graph semantics or sensitive-content leakage. See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) and [the v0.6 validation record](docs/evidence/v0.6.0.md) for exact evidence grades and prerequisites.
 
 ### Live OTLP collection
 
@@ -202,7 +203,7 @@ See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for exact framework coverage 
 This project does not currently:
 
 - capture traffic from closed-source clients without instrumentation;
-- ingest OTLP metrics, logs, or profiles; v0.5 deliberately accepts traces only;
+- ingest OTLP metrics, logs, or profiles; v0.6 deliberately accepts traces only;
 - prove which weights a hosted model provider actually served;
 - retain prompt, completion, tool argument, or tool result content;
 - declare a prompt, model, or tool safe;

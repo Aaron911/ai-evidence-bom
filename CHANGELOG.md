@@ -4,6 +4,32 @@ All notable changes to this experimental project are documented here.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-04
+
+### Added
+
+- A complete, deterministic Dify 1.16.1 application-runtime compatibility gate using its official API, plugin daemon, database, Redis, workflow import/publish path, OpenAI plugin, built-in tool, and supported OTLP exporter.
+- A checksum-pinned local-package installation path for the official Dify OpenAI plugin, avoiding plugin-container Marketplace DNS as an unrelated source of test nondeterminism.
+- Weekly and path-triggered GitHub Actions coverage for the heavier full-runtime check.
+- A reproducible evidence record covering both the initial failed setup and the corrected passing run.
+
+### Changed
+
+- Dify compatibility is upgraded from instrumentation execution to live capture for the tested complete workflow path.
+- The Phase 1 core exit gate is marked complete: two unrelated framework runtimes now produce the same core agent/model/tool graph semantics over standard OTLP.
+- Cleanup of live validation processes and containers is bounded so setup failures return evidence instead of consuming the entire job timeout.
+
+### Security
+
+- The full Dify workflow verifies that system prompt, input, model output, tool argument, and tool output markers do not reach the evidence graph or CycloneDX BOM.
+- The pinned Dify plugin package must match its recorded SHA-256 before installation.
+
+### Known gaps
+
+- Dify live capture covers one deterministic LLM-plus-tool workflow, not every node, provider, deployment mode, or production limit.
+- Dify telemetry must be explicitly enabled and configured; uninstrumented Agent applications still emit no standard telemetry.
+- Stable retrieval data-source identity, MCP server identity, and multi-agent handoff remain unvalidated.
+
 ## [0.5.0] - 2026-08-04
 
 ### Added
@@ -108,7 +134,8 @@ All notable changes to this experimental project are documented here.
 
 - Initial evidence graph, OTLP JSON file scan, CycloneDX export, diff, policy, prompt HMAC, and Ed25519 signing prototype.
 
-[Unreleased]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.2.0...v0.3.0
