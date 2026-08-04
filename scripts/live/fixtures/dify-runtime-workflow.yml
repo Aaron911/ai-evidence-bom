@@ -1,0 +1,203 @@
+app:
+  description: Full Dify runtime evidence check for AI Evidence BOM
+  icon: 🔎
+  icon_background: '#D5F5E3'
+  mode: workflow
+  name: aiebom_dify_runtime
+  use_icon_as_answer_icon: false
+dependencies:
+- current_identifier: null
+  type: marketplace
+  value:
+    marketplace_plugin_unique_identifier: langgenius/openai:0.2.5@373362a028986aae53a7baf73a7f11991ba3c22c69eaf97d6cde048cfd4a9f98
+kind: app
+version: 0.4.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      enabled: false
+    opening_statement: ''
+    retriever_resource:
+      enabled: false
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions: []
+    suggested_questions_after_answer:
+      enabled: false
+    text_to_speech:
+      enabled: false
+      language: ''
+      voice: ''
+  graph:
+    edges:
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: start
+        targetType: llm
+      id: start-source-llm-target
+      source: start
+      sourceHandle: source
+      target: llm
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: llm
+        targetType: tool
+      id: llm-source-tool-target
+      source: llm
+      sourceHandle: source
+      target: tool
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    - data:
+        isInIteration: false
+        isInLoop: false
+        sourceType: tool
+        targetType: end
+      id: tool-source-end-target
+      source: tool
+      sourceHandle: source
+      target: end
+      targetHandle: target
+      type: custom
+      zIndex: 0
+    nodes:
+    - data:
+        desc: ''
+        selected: false
+        title: Start
+        type: start
+        variables:
+        - label: question
+          max_length: null
+          options: []
+          required: true
+          type: text-input
+          variable: question
+      height: 90
+      id: start
+      position:
+        x: 30
+        y: 245
+      positionAbsolute:
+        x: 30
+        y: 245
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        context:
+          enabled: false
+          variable_selector: []
+        desc: ''
+        model:
+          completion_params:
+            temperature: 0
+          mode: chat
+          name: gpt-4o
+          provider: langgenius/openai/openai
+        prompt_template:
+        - id: aiebom-system-prompt
+          role: system
+          text: DIFY_RUNTIME_SYSTEM_PROMPT_MUST_NOT_LEAK
+        - id: aiebom-user-prompt
+          role: user
+          text: '{{#start.question#}}'
+        selected: false
+        title: LLM
+        type: llm
+        variables: []
+        vision:
+          enabled: false
+      height: 90
+      id: llm
+      position:
+        x: 334
+        y: 245
+      positionAbsolute:
+        x: 334
+        y: 245
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: ''
+        is_team_authorization: true
+        output_schema: null
+        paramSchemas: []
+        params:
+          format: ''
+          timezone: ''
+        provider_id: time
+        provider_name: time
+        provider_type: builtin
+        selected: false
+        title: time.current_time
+        tool_configurations:
+          format:
+            type: mixed
+            value: DIFY_RUNTIME_TOOL_ARGUMENT_MUST_NOT_LEAK
+          timezone:
+            type: constant
+            value: UTC
+        tool_description: A tool for getting the current time.
+        tool_label: Current Time
+        tool_name: current_time
+        tool_node_version: '2'
+        tool_parameters: {}
+        type: tool
+      height: 116
+      id: tool
+      position:
+        x: 638
+        y: 245
+      positionAbsolute:
+        x: 638
+        y: 245
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    - data:
+        desc: ''
+        outputs:
+        - value_selector:
+          - llm
+          - text
+          value_type: string
+          variable: answer
+        - value_selector:
+          - tool
+          - text
+          value_type: string
+          variable: tool_result
+        selected: false
+        title: End
+        type: end
+      height: 90
+      id: end
+      position:
+        x: 942
+        y: 245
+      positionAbsolute:
+        x: 942
+        y: 245
+      sourcePosition: right
+      targetPosition: left
+      type: custom
+      width: 244
+    viewport:
+      x: 0
+      y: 0
+      zoom: 0.7
