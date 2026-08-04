@@ -1,0 +1,62 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "travel-agent-service"}},
+          {"key": "service.version", "value": {"stringValue": "source-contract"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {"name": "agent_framework.observability"},
+          "spans": [
+            {
+              "traceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "spanId": "aaaaaaaaaaaaaaaa",
+              "name": "invoke_agent travel-assistant",
+              "startTimeUnixNano": "1785844800000000000",
+              "attributes": [
+                {"key": "gen_ai.operation.name", "value": {"stringValue": "invoke_agent"}},
+                {"key": "gen_ai.provider.name", "value": {"stringValue": "microsoft.agent_framework"}},
+                {"key": "gen_ai.agent.id", "value": {"stringValue": "travel-assistant-v1"}},
+                {"key": "gen_ai.agent.name", "value": {"stringValue": "travel-assistant"}},
+                {"key": "gen_ai.agent.description", "value": {"stringValue": "Sanitized travel assistant"}},
+                {"key": "gen_ai.request.model", "value": {"stringValue": "gpt-5"}},
+                {"key": "gen_ai.input.messages", "value": {"stringValue": "MAF_PRIVATE_AGENT_INPUT_MUST_NOT_LEAK"}}
+              ]
+            },
+            {
+              "traceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "spanId": "bbbbbbbbbbbbbbbb",
+              "parentSpanId": "aaaaaaaaaaaaaaaa",
+              "name": "chat gpt-5",
+              "startTimeUnixNano": "1785844800100000000",
+              "attributes": [
+                {"key": "gen_ai.operation.name", "value": {"stringValue": "chat"}},
+                {"key": "gen_ai.provider.name", "value": {"stringValue": "openai"}},
+                {"key": "gen_ai.request.model", "value": {"stringValue": "gpt-5"}},
+                {"key": "gen_ai.input.messages", "value": {"stringValue": "MAF_PRIVATE_MODEL_INPUT_MUST_NOT_LEAK"}},
+                {"key": "gen_ai.output.messages", "value": {"stringValue": "MAF_PRIVATE_MODEL_OUTPUT_MUST_NOT_LEAK"}}
+              ]
+            },
+            {
+              "traceId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "spanId": "cccccccccccccccc",
+              "parentSpanId": "aaaaaaaaaaaaaaaa",
+              "name": "execute_tool weather.lookup",
+              "startTimeUnixNano": "1785844800200000000",
+              "attributes": [
+                {"key": "gen_ai.operation.name", "value": {"stringValue": "execute_tool"}},
+                {"key": "gen_ai.tool.name", "value": {"stringValue": "weather.lookup"}},
+                {"key": "gen_ai.tool.type", "value": {"stringValue": "function"}},
+                {"key": "gen_ai.tool.call.arguments", "value": {"stringValue": "MAF_PRIVATE_ARGUMENTS_MUST_NOT_LEAK"}},
+                {"key": "gen_ai.tool.call.result", "value": {"stringValue": "MAF_PRIVATE_RESULT_MUST_NOT_LEAK"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

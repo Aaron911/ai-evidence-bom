@@ -2,7 +2,7 @@
 
 AI telemetry may contain source code, credentials, personal data, system prompts, retrieved documents, tool parameters, and model responses. The project therefore uses a metadata-only default.
 
-## Never retained by the v0.3 normalizer
+## Never retained by the v0.4 normalizer
 
 - prompt and completion bodies;
 - tool call arguments and results;
@@ -11,6 +11,8 @@ AI telemetry may contain source code, credentials, personal data, system prompts
 - model input and output attachments.
 
 These attributes may be present in an input OTLP document, but the normalizer does not copy them into the graph.
+
+The Dify and Microsoft Agent Framework contract fixtures intentionally contain marker values in prompt, input, output, tool-argument, and tool-result fields. Automated compatibility tests fail if any marker reaches the normalized graph.
 
 ## Prompt change detection
 

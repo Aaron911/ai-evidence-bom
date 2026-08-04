@@ -6,13 +6,15 @@ It answers a narrower question than an ordinary scanner:
 
 > What models, agents, tools, MCP servers, prompts, and data sources were actually observed at runtime, and how did that set change?
 
-The project is an experimental v0.3 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
+The project is an experimental v0.4 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
 
 ## Current capabilities
 
 - Reads OTLP JSON (`resourceSpans`) and a compact observation JSON format.
 - Receives OTLP/HTTP JSON or protobuf traces at `/v1/traces` and OTLP/gRPC traces on port 4317.
 - Normalizes agents, models, tools, MCP servers, prompts, and data sources into a stable graph.
+- Uses OTLP trace parentage to associate model and tool child spans with the correct agent and to avoid duplicate framework-summary model nodes.
+- Includes source-derived compatibility contracts for Dify and Microsoft Agent Framework.
 - Records evidence as `inferred`, `declared`, `observed`, or `verified`.
 - Exports CycloneDX 1.7 JSON with AI/ML component types and relationships.
 - Compares two evidence graphs to find new, removed, and changed capabilities.
@@ -145,7 +147,7 @@ The internal graph is the source of truth. Export formats are adapters so the co
 
 ## Policy example
 
-Policies are JSON in v0.3:
+Policies are JSON:
 
 ```json
 {
@@ -180,21 +182,23 @@ The normalizer accepts current and common legacy forms including:
 
 Standard `invoke_agent {agent.name}` and `execute_tool {tool.name}` span names are used as fallbacks when an attribute is unavailable. Instrumentation scope name, version, and schema URL are retained as provenance metadata. The implementation tracks the developing [OpenTelemetry GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai) rather than defining a competing telemetry vocabulary.
 
-See [docs/SCHEMA.md](docs/SCHEMA.md) for the compact input and graph contracts.
+OTLP `traceId`, `spanId`, and `parentSpanId` are used together during normalization. Explicit `gen_ai.agent.*` identity is inherited by descendant spans in the same trace. For Dify, `dify.app_id` is treated as the stable agent identity and is propagated in the same way.
+
+See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for exact framework coverage and evidence levels, and [docs/SCHEMA.md](docs/SCHEMA.md) for the compact input and graph contracts.
 
 ## Project boundaries
 
 This project does not currently:
 
 - capture traffic from closed-source clients without instrumentation;
-- ingest OTLP metrics, logs, or profiles; v0.3 deliberately accepts traces only;
+- ingest OTLP metrics, logs, or profiles; v0.4 deliberately accepts traces only;
 - prove which weights a hosted model provider actually served;
 - retain prompt, completion, tool argument, or tool result content;
 - declare a prompt, model, or tool safe;
 - provide automatic remediation or a web dashboard;
 - claim AI Act, NIST, SPDX, or CycloneDX certification.
 
-The roadmap and validation gates are in [docs/ROADMAP.md](docs/ROADMAP.md). Security and privacy decisions are documented in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) and [docs/PRIVACY.md](docs/PRIVACY.md).
+The roadmap and validation gates are in [docs/ROADMAP.md](docs/ROADMAP.md). Each release's direction check is recorded in [docs/DIRECTION.md](docs/DIRECTION.md). Security and privacy decisions are documented in [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) and [docs/PRIVACY.md](docs/PRIVACY.md).
 
 Version history is recorded in [CHANGELOG.md](CHANGELOG.md).
 

@@ -12,6 +12,8 @@ The compact format is useful for adapters that do not emit OTLP directly:
       "timestamp": "2026-08-04T12:00:00Z",
       "level": "declared",
       "traceId": "optional-trace-id",
+      "spanId": "model-call-span",
+      "parentSpanId": "agent-invocation-span",
       "attributes": {
         "service.name": "release-assistant",
         "gen_ai.agent.name": "release-assistant",
@@ -24,6 +26,10 @@ The compact format is useful for adapters that do not emit OTLP directly:
 ```
 
 Unknown attributes remain available to future adapters, but only an allowlisted subset is copied into graph properties.
+
+`traceId`, `spanId`, and `parentSpanId` form normalization context rather than graph content. A child model or tool span inherits the nearest explicit agent identity from its ancestors in the same trace. A nested span with its own explicit agent identity starts a new context. Cycles, missing parents, and cross-trace parent IDs are ignored safely.
+
+When an `invoke_agent` span summarizes a requested model and a concrete model operation such as `chat` exists below it, the summary model is suppressed. The concrete model span retains the actual model provider and evidence. This avoids counting one call twice or treating a framework provider as the model provider.
 
 ## Evidence graph
 
@@ -48,7 +54,7 @@ Each node and edge has an evidence summary:
 }
 ```
 
-At most 20 trace identifiers are retained per node or edge in v0.3. Observation counts continue increasing after that cap.
+At most 20 trace identifiers are retained per node or edge in v0.4. Observation counts continue increasing after that cap.
 
 Continuous collection merges snapshots by stable node and edge identity. It preserves the strongest evidence level, earliest and latest observation time, all observed versions, and cumulative observation counts. The latest timestamp wins when version or property values conflict.
 

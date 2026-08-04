@@ -24,6 +24,7 @@ func TestParseOTLPProtoPreservesTraceAndScope(t *testing.T) {
 				Spans: []*tracepb.Span{{
 					TraceId:           []byte{0x01, 0x02, 0x03},
 					SpanId:            []byte{0x04, 0x05},
+					ParentSpanId:      []byte{0x06, 0x07},
 					Name:              "chat gpt-5",
 					StartTimeUnixNano: timestamp,
 					Attributes: []*commonpb.KeyValue{
@@ -43,8 +44,8 @@ func TestParseOTLPProtoPreservesTraceAndScope(t *testing.T) {
 		t.Fatalf("unexpected parse result: source=%q observations=%d", source, len(observations))
 	}
 	observation := observations[0]
-	if observation.TraceID != "010203" || observation.SpanID != "0405" {
-		t.Fatalf("unexpected identifiers: trace=%q span=%q", observation.TraceID, observation.SpanID)
+	if observation.TraceID != "010203" || observation.SpanID != "0405" || observation.ParentSpanID != "0607" {
+		t.Fatalf("unexpected identifiers: trace=%q span=%q parent=%q", observation.TraceID, observation.SpanID, observation.ParentSpanID)
 	}
 	wantTime := time.Unix(0, int64(timestamp)).UTC()
 	if !observation.Timestamp.Equal(wantTime) {

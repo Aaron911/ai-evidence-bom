@@ -4,6 +4,31 @@ All notable changes to this experimental project are documented here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-04
+
+### Added
+
+- OTLP `parentSpanId` preservation for JSON, compact observation, and protobuf inputs.
+- Trace-context normalization that carries stable agent identity to descendant model and tool spans.
+- Source-derived, sanitized OTLP compatibility fixtures for Dify and Microsoft Agent Framework.
+- Cross-framework contract tests proving equivalent core agent, model, tool, and relationship semantics.
+- An evidence-graded compatibility matrix and a durable release direction-calibration record.
+
+### Changed
+
+- A concrete model child span now supersedes model summary attributes on an ancestor `invoke_agent` span, preventing duplicate model nodes and framework-provider misclassification.
+- `dify.app_id` is used as stable agent identity; host `service.version` metadata is no longer misclassified as an explicitly identified agent version.
+- Compatibility claims now distinguish source-contract validation from live-capture and production validation.
+
+### Security
+
+- Framework fixtures include sensitive marker values, and tests prove that prompt/input/output bodies and tool arguments/results do not leak into the graph.
+
+### Known gaps
+
+- The framework fixtures are derived from pinned upstream source contracts, not captured from running framework installations.
+- Stable Dify retrieval data-source identity, MCP server identity, and multi-agent handoff semantics still require live validation.
+
 ## [0.3.0] - 2026-08-04
 
 ### Added
@@ -56,7 +81,8 @@ All notable changes to this experimental project are documented here.
 
 - Initial evidence graph, OTLP JSON file scan, CycloneDX export, diff, policy, prompt HMAC, and Ed25519 signing prototype.
 
-[Unreleased]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Aaron911/ai-evidence-bom/releases/tag/v0.1.0

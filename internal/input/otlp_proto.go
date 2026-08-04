@@ -53,12 +53,13 @@ func ParseOTLPProto(request *collectortracepb.ExportTraceServiceRequest, fallbac
 					attrs["otel.scope.schema_url"] = scopeSpans.GetSchemaUrl()
 				}
 				observations = append(observations, Observation{
-					Timestamp:  protoNanoTime(span.GetStartTimeUnixNano()),
-					Level:      model.EvidenceObserved,
-					Source:     serviceName,
-					TraceID:    hex.EncodeToString(span.GetTraceId()),
-					SpanID:     hex.EncodeToString(span.GetSpanId()),
-					Attributes: attrs,
+					Timestamp:    protoNanoTime(span.GetStartTimeUnixNano()),
+					Level:        model.EvidenceObserved,
+					Source:       serviceName,
+					TraceID:      hex.EncodeToString(span.GetTraceId()),
+					SpanID:       hex.EncodeToString(span.GetSpanId()),
+					ParentSpanID: hex.EncodeToString(span.GetParentSpanId()),
+					Attributes:   attrs,
 				})
 			}
 		}

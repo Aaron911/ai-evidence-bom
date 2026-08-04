@@ -1,0 +1,65 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {"key": "service.name", "value": {"stringValue": "dify-api"}},
+          {"key": "service.version", "value": {"stringValue": "dify-source-contract"}}
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {"name": "dify.extensions.otel"},
+          "spans": [
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "1111111111111111",
+              "name": "core.app.apps.workflow_app_runner.WorkflowAppRunner.run",
+              "startTimeUnixNano": "1785844800000000000",
+              "attributes": [
+                {"key": "dify.app_id", "value": {"stringValue": "travel-assistant-v1"}},
+                {"key": "dify.workflow_id", "value": {"stringValue": "travel-workflow-v1"}},
+                {"key": "dify.tenant_id", "value": {"stringValue": "sanitized-tenant"}}
+              ]
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "2222222222222222",
+              "parentSpanId": "1111111111111111",
+              "name": "llm",
+              "startTimeUnixNano": "1785844800100000000",
+              "attributes": [
+                {"key": "gen_ai.framework", "value": {"stringValue": "dify"}},
+                {"key": "gen_ai.span.kind", "value": {"stringValue": "LLM"}},
+                {"key": "node.id", "value": {"stringValue": "llm-node"}},
+                {"key": "node.type", "value": {"stringValue": "llm"}},
+                {"key": "gen_ai.request.model", "value": {"stringValue": "gpt-5"}},
+                {"key": "gen_ai.provider.name", "value": {"stringValue": "openai"}},
+                {"key": "gen_ai.prompt", "value": {"stringValue": "DIFY_PRIVATE_PROMPT_MUST_NOT_LEAK"}},
+                {"key": "gen_ai.input.messages", "value": {"stringValue": "DIFY_PRIVATE_INPUT_MUST_NOT_LEAK"}},
+                {"key": "gen_ai.output.messages", "value": {"stringValue": "DIFY_PRIVATE_OUTPUT_MUST_NOT_LEAK"}}
+              ]
+            },
+            {
+              "traceId": "11111111111111111111111111111111",
+              "spanId": "3333333333333333",
+              "parentSpanId": "1111111111111111",
+              "name": "tool",
+              "startTimeUnixNano": "1785844800200000000",
+              "attributes": [
+                {"key": "gen_ai.framework", "value": {"stringValue": "dify"}},
+                {"key": "gen_ai.span.kind", "value": {"stringValue": "TOOL"}},
+                {"key": "node.id", "value": {"stringValue": "tool-node"}},
+                {"key": "node.type", "value": {"stringValue": "tool"}},
+                {"key": "gen_ai.tool.name", "value": {"stringValue": "weather.lookup"}},
+                {"key": "gen_ai.tool.type", "value": {"stringValue": "builtin"}},
+                {"key": "gen_ai.tool.call.arguments", "value": {"stringValue": "DIFY_PRIVATE_ARGUMENTS_MUST_NOT_LEAK"}},
+                {"key": "gen_ai.tool.call.result", "value": {"stringValue": "DIFY_PRIVATE_RESULT_MUST_NOT_LEAK"}}
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

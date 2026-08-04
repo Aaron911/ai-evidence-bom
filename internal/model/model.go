@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = "0.3.0"
+const SchemaVersion = "0.4.0"
 
 type EvidenceLevel string
 

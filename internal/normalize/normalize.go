@@ -32,7 +32,7 @@ func BuildWithOptions(observations []inputpkg.Observation, source string, genera
 		edges:   make(map[string]*model.Edge),
 		options: options,
 	}
-	for _, observation := range observations {
+	for _, observation := range prepareObservations(observations) {
 		builder.addObservation(observation)
 	}
 	graph := model.Graph{
@@ -67,24 +67,39 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 	)
 	serviceName := first(attrs, "service.name", "service.namespace", "host.name")
 	agentName := first(attrs, "gen_ai.agent.name", "agent.name")
+	agentNameFromService := false
 	if agentName == "" && operation == "invoke_agent" {
 		agentName = spanEntityName(spanName, "invoke_agent")
 	}
 	if agentName == "" && hasGenAIAttributes(attrs) {
 		agentName = serviceName
+		agentNameFromService = agentName != ""
 	}
-	agentVersion := first(attrs, "gen_ai.agent.version", "service.version")
+	agentVersion := first(attrs, "gen_ai.agent.version")
+	if agentVersion == "" && agentNameFromService {
+		agentVersion = first(attrs, "service.version")
+	}
 	agentProvider := first(attrs, "gen_ai.agent.provider", "service.namespace")
 
 	var agent *model.Node
 	if agentName != "" {
 		agent = b.addNode(nodeInput{
-			Type:       "agent",
-			Name:       agentName,
-			Identity:   firstNonEmpty(first(attrs, "gen_ai.agent.id"), agentName),
-			Version:    agentVersion,
-			Provider:   agentProvider,
-			Properties: selected(attrs, "gen_ai.agent.id", "deployment.environment.name", "service.namespace", "otel.scope.name", "otel.scope.version", "otel.scope.schema_url"),
+			Type:     "agent",
+			Name:     agentName,
+			Identity: firstNonEmpty(first(attrs, "gen_ai.agent.id"), agentName),
+			Version:  agentVersion,
+			Provider: agentProvider,
+			Properties: selected(attrs,
+				"gen_ai.agent.id",
+				"gen_ai.framework",
+				"dify.app_id",
+				"dify.workflow_id",
+				"deployment.environment.name",
+				"service.namespace",
+				"otel.scope.name",
+				"otel.scope.version",
+				"otel.scope.schema_url",
+			),
 		}, observation)
 	}
 

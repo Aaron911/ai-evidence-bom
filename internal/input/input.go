@@ -11,12 +11,13 @@ import (
 )
 
 type Observation struct {
-	Timestamp  time.Time
-	Level      model.EvidenceLevel
-	Source     string
-	TraceID    string
-	SpanID     string
-	Attributes map[string]string
+	Timestamp    time.Time
+	Level        model.EvidenceLevel
+	Source       string
+	TraceID      string
+	SpanID       string
+	ParentSpanID string
+	Attributes   map[string]string
 }
 
 type simpleDocument struct {
@@ -25,12 +26,13 @@ type simpleDocument struct {
 }
 
 type simpleObservation struct {
-	Timestamp  time.Time           `json:"timestamp"`
-	Level      model.EvidenceLevel `json:"level"`
-	Source     string              `json:"source"`
-	TraceID    string              `json:"traceId"`
-	SpanID     string              `json:"spanId"`
-	Attributes map[string]any      `json:"attributes"`
+	Timestamp    time.Time           `json:"timestamp"`
+	Level        model.EvidenceLevel `json:"level"`
+	Source       string              `json:"source"`
+	TraceID      string              `json:"traceId"`
+	SpanID       string              `json:"spanId"`
+	ParentSpanID string              `json:"parentSpanId"`
+	Attributes   map[string]any      `json:"attributes"`
 }
 
 // Parse accepts either a compact observation document or OTLP JSON containing resourceSpans.
@@ -65,12 +67,13 @@ func parseSimple(data []byte, fallbackSource string) ([]Observation, string, err
 			timestamp = time.Now().UTC()
 		}
 		out = append(out, Observation{
-			Timestamp:  timestamp.UTC(),
-			Level:      level,
-			Source:     firstNonEmpty(raw.Source, source),
-			TraceID:    raw.TraceID,
-			SpanID:     raw.SpanID,
-			Attributes: flattenMap(raw.Attributes),
+			Timestamp:    timestamp.UTC(),
+			Level:        level,
+			Source:       firstNonEmpty(raw.Source, source),
+			TraceID:      raw.TraceID,
+			SpanID:       raw.SpanID,
+			ParentSpanID: raw.ParentSpanID,
+			Attributes:   flattenMap(raw.Attributes),
 		})
 	}
 	return out, source, nil
@@ -105,6 +108,7 @@ type otlpScope struct {
 type otlpSpan struct {
 	TraceID           string          `json:"traceId"`
 	SpanID            string          `json:"spanId"`
+	ParentSpanID      string          `json:"parentSpanId"`
 	Name              string          `json:"name"`
 	StartTimeUnixNano json.RawMessage `json:"startTimeUnixNano"`
 	Attributes        []otlpKeyValue  `json:"attributes"`
@@ -173,12 +177,13 @@ func ParseOTLP(data []byte, fallbackSource string) ([]Observation, string, error
 					attrs["otel.scope.schema_url"] = scopeSpans.SchemaURL
 				}
 				observations = append(observations, Observation{
-					Timestamp:  nanoTime(span.StartTimeUnixNano),
-					Level:      model.EvidenceObserved,
-					Source:     serviceName,
-					TraceID:    span.TraceID,
-					SpanID:     span.SpanID,
-					Attributes: attrs,
+					Timestamp:    nanoTime(span.StartTimeUnixNano),
+					Level:        model.EvidenceObserved,
+					Source:       serviceName,
+					TraceID:      span.TraceID,
+					SpanID:       span.SpanID,
+					ParentSpanID: span.ParentSpanID,
+					Attributes:   attrs,
 				})
 			}
 		}

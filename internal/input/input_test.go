@@ -39,6 +39,25 @@ func TestParseOTLPAcceptsEmptyExportRequest(t *testing.T) {
 	}
 }
 
+func TestParseCompactObservationPreservesParentSpan(t *testing.T) {
+	data := []byte(`{
+	  "source":"demo",
+	  "observations":[{
+	    "traceId":"trace-1",
+	    "spanId":"child",
+	    "parentSpanId":"parent",
+	    "attributes":{"gen_ai.tool.name":"search"}
+	  }]
+	}`)
+	observations, _, err := Parse(data, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(observations) != 1 || observations[0].ParentSpanID != "parent" {
+		t.Fatalf("unexpected observations: %+v", observations)
+	}
+}
+
 func TestParseOTLPPreservesScopeProvenance(t *testing.T) {
 	data := []byte(`{
 	  "resourceSpans":[{
@@ -47,7 +66,7 @@ func TestParseOTLPPreservesScopeProvenance(t *testing.T) {
 	    "scopeSpans":[{
 	      "schemaUrl":"https://opentelemetry.io/schemas/gen-ai/1.42.0",
 	      "scope":{"name":"demo.instrumentation","version":"2.0.0"},
-	      "spans":[{"traceId":"abc","spanId":"def","name":"invoke_agent reviewer"}]
+	      "spans":[{"traceId":"abc","spanId":"def","parentSpanId":"123","name":"invoke_agent reviewer"}]
 	    }]
 	  }]
 	}`)
@@ -61,5 +80,8 @@ func TestParseOTLPPreservesScopeProvenance(t *testing.T) {
 	}
 	if attributes["otel.scope.schema_url"] != "https://opentelemetry.io/schemas/gen-ai/1.42.0" {
 		t.Fatalf("scope schema URL missing: %v", attributes)
+	}
+	if observations[0].ParentSpanID != "123" {
+		t.Fatalf("parent span ID=%q want=123", observations[0].ParentSpanID)
 	}
 }

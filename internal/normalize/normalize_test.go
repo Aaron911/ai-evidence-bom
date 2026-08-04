@@ -78,3 +78,190 @@ func TestBuildInfersStandardAgentAndToolSpanNames(t *testing.T) {
 		t.Fatalf("standard span names were not normalized: %+v", graph.Nodes)
 	}
 }
+
+func TestBuildCarriesAgentIdentityToChildSpans(t *testing.T) {
+	timestamp := time.Unix(100, 0).UTC()
+	graph := Build([]inputpkg.Observation{
+		{
+			Timestamp: timestamp,
+			Level:     model.EvidenceObserved,
+			Source:    "agent-service",
+			TraceID:   "trace-1",
+			SpanID:    "agent-span",
+			Attributes: map[string]string{
+				"service.name":          "agent-service",
+				"gen_ai.operation.name": "invoke_agent",
+				"gen_ai.agent.id":       "agent-1",
+				"gen_ai.agent.name":     "travel-agent",
+			},
+		},
+		{
+			Timestamp:    timestamp,
+			Level:        model.EvidenceObserved,
+			Source:       "agent-service",
+			TraceID:      "trace-1",
+			SpanID:       "model-span",
+			ParentSpanID: "agent-span",
+			Attributes: map[string]string{
+				"service.name":          "agent-service",
+				"gen_ai.operation.name": "chat",
+				"gen_ai.request.model":  "gpt-5",
+				"gen_ai.provider.name":  "openai",
+			},
+		},
+		{
+			Timestamp:    timestamp,
+			Level:        model.EvidenceObserved,
+			Source:       "agent-service",
+			TraceID:      "trace-1",
+			SpanID:       "tool-span",
+			ParentSpanID: "agent-span",
+			Attributes: map[string]string{
+				"service.name":          "agent-service",
+				"gen_ai.operation.name": "execute_tool",
+				"gen_ai.tool.name":      "weather.lookup",
+			},
+		},
+	}, "agent-service", timestamp)
+
+	if len(graph.Nodes) != 3 || len(graph.Edges) != 2 {
+		t.Fatalf("unexpected graph size: nodes=%d edges=%d", len(graph.Nodes), len(graph.Edges))
+	}
+	agentID := model.StableNodeID("agent", "", "agent-1")
+	modelID := model.StableNodeID("model", "openai", "gpt-5")
+	toolID := model.StableNodeID("tool", "", "weather.lookup")
+	assertNode(t, graph, agentID, "agent", "travel-agent", "")
+	assertNode(t, graph, modelID, "model", "gpt-5", "openai")
+	assertNode(t, graph, toolID, "tool", "weather.lookup", "")
+	assertEdge(t, graph, agentID, modelID, "uses")
+	assertEdge(t, graph, agentID, toolID, "invokes")
+}
+
+func TestBuildDoesNotTreatInvokeAgentSummaryAsSecondModel(t *testing.T) {
+	timestamp := time.Unix(100, 0).UTC()
+	graph := Build([]inputpkg.Observation{
+		{
+			Timestamp: timestamp,
+			Level:     model.EvidenceObserved,
+			Source:    "agent-service",
+			TraceID:   "trace-1",
+			SpanID:    "agent-span",
+			Attributes: map[string]string{
+				"gen_ai.operation.name": "invoke_agent",
+				"gen_ai.agent.id":       "agent-1",
+				"gen_ai.agent.name":     "travel-agent",
+				"gen_ai.provider.name":  "framework-provider",
+				"gen_ai.request.model":  "gpt-5",
+			},
+		},
+		{
+			Timestamp:    timestamp,
+			Level:        model.EvidenceObserved,
+			Source:       "agent-service",
+			TraceID:      "trace-1",
+			SpanID:       "model-span",
+			ParentSpanID: "agent-span",
+			Attributes: map[string]string{
+				"gen_ai.operation.name": "chat",
+				"gen_ai.provider.name":  "openai",
+				"gen_ai.request.model":  "gpt-5",
+			},
+		},
+	}, "agent-service", timestamp)
+
+	models := 0
+	for _, node := range graph.Nodes {
+		if node.Type == "model" {
+			models++
+			if node.Provider != "openai" {
+				t.Fatalf("model provider=%q want=openai", node.Provider)
+			}
+		}
+	}
+	if models != 1 {
+		t.Fatalf("models=%d want=1; nodes=%+v", models, graph.Nodes)
+	}
+}
+
+func TestConcreteModelSuppressesOnlyNearestAgentSummary(t *testing.T) {
+	timestamp := time.Unix(100, 0).UTC()
+	graph := Build([]inputpkg.Observation{
+		{
+			Timestamp: timestamp,
+			Level:     model.EvidenceObserved,
+			Source:    "agent-service",
+			TraceID:   "trace-1",
+			SpanID:    "outer-agent",
+			Attributes: map[string]string{
+				"gen_ai.operation.name": "invoke_agent",
+				"gen_ai.agent.id":       "outer-agent",
+				"gen_ai.agent.name":     "orchestrator",
+				"gen_ai.provider.name":  "openai",
+				"gen_ai.request.model":  "orchestrator-model",
+			},
+		},
+		{
+			Timestamp:    timestamp,
+			Level:        model.EvidenceObserved,
+			Source:       "agent-service",
+			TraceID:      "trace-1",
+			SpanID:       "inner-agent",
+			ParentSpanID: "outer-agent",
+			Attributes: map[string]string{
+				"gen_ai.operation.name": "invoke_agent",
+				"gen_ai.agent.id":       "inner-agent",
+				"gen_ai.agent.name":     "specialist",
+				"gen_ai.provider.name":  "framework-provider",
+				"gen_ai.request.model":  "specialist-model",
+			},
+		},
+		{
+			Timestamp:    timestamp,
+			Level:        model.EvidenceObserved,
+			Source:       "agent-service",
+			TraceID:      "trace-1",
+			SpanID:       "model-span",
+			ParentSpanID: "inner-agent",
+			Attributes: map[string]string{
+				"gen_ai.operation.name": "chat",
+				"gen_ai.provider.name":  "openai",
+				"gen_ai.request.model":  "specialist-model",
+			},
+		},
+	}, "agent-service", timestamp)
+
+	var models []model.Node
+	for _, node := range graph.Nodes {
+		if node.Type == "model" {
+			models = append(models, node)
+		}
+	}
+	if len(models) != 2 {
+		t.Fatalf("models=%d want=2; nodes=%+v", len(models), graph.Nodes)
+	}
+	assertNode(t, graph, model.StableNodeID("model", "openai", "orchestrator-model"), "model", "orchestrator-model", "openai")
+	assertNode(t, graph, model.StableNodeID("model", "openai", "specialist-model"), "model", "specialist-model", "openai")
+}
+
+func assertNode(t *testing.T, graph model.Graph, id, nodeType, name, provider string) {
+	t.Helper()
+	for _, node := range graph.Nodes {
+		if node.ID == id {
+			if node.Type != nodeType || node.Name != name || node.Provider != provider {
+				t.Fatalf("node %s mismatch: %+v", id, node)
+			}
+			return
+		}
+	}
+	t.Fatalf("node %s not found: %+v", id, graph.Nodes)
+}
+
+func assertEdge(t *testing.T, graph model.Graph, from, to, relation string) {
+	t.Helper()
+	for _, edge := range graph.Edges {
+		if edge.From == from && edge.To == to && edge.Relation == relation {
+			return
+		}
+	}
+	t.Fatalf("edge %s -[%s]-> %s not found: %+v", from, relation, to, graph.Edges)
+}
