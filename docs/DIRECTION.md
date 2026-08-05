@@ -150,6 +150,42 @@ Prepare one evidence-backed OpenTelemetry GenAI proposal covering MCP `2026-07-2
 
 Until that feedback exists, do not add another project-specific server-identity alias. If the proposal is rejected, retain the explicit extension and validate the same identity/capability semantics with one second official MCP SDK before expanding product scope.
 
+## v0.8 proposal-preparation calibration — 2026-08-05
+
+This is an unreleased documentation and external-validation iteration, not a v0.8 product release.
+
+### Uncertainty tested
+
+Does the current OpenTelemetry GenAI MCP convention still have a concrete, reproducible gap for MCP `2026-07-28` lifecycle and logical peer-server metadata, or is AI Evidence BOM's project bridge duplicating a standard field that was added after v0.7?
+
+### Evidence gained
+
+- OpenTelemetry GenAI `main` still resolves to reviewed commit `7e6e188`. Its MCP convention remains Development, contains no `server/discover` method or logical MCP server name/version attribute, recommends `mcp.session.id`, defines session-duration metrics, and demonstrates the `2025-06-18` `initialize` lifecycle.
+- The current MCP `2026-07-28` specification removes the protocol-level handshake and session, adds `server/discover` and `subscriptions/listen`, and carries self-reported server information in response metadata.
+- Existing `server.address` is an endpoint rather than logical implementation metadata; server-side Resource `service.name` is not generally visible to a client; `gen_ai.tool.name` is only unique within a server. The v0.7 stdio reproduction therefore exercises a real interoperability gap.
+- Searches of the upstream issue and pull-request lists found related MCP work but no issue specifically covering `2026-07-28`, `server/discover`, session removal, and protocol-reported peer server identity together.
+- A focused English proposal records the pinned boundary, live reproduction, privacy constraints, candidate semantics, reference scenario, and open maintainer questions. It was submitted with explicit authorization as [`open-telemetry/semantic-conventions-genai#437`](https://github.com/open-telemetry/semantic-conventions-genai/issues/437). No maintainer agreement is claimed yet.
+
+### Decision
+
+**Continue upstream-first, without a product version bump.** The standards gap remains real and evidence-backed, and the proposal is now awaiting external review. The correct next step is to evaluate maintainer feedback, not add another private alias, framework adapter, dashboard, or vulnerability feed.
+
+The draft deliberately treats MCP server information as untrusted and non-unique. It proposes lifecycle alignment and semantic requirements while leaving final attribute naming to the GenAI SIG.
+
+### Risks and pivot signals
+
+- Maintainers may prefer an existing peer-service/entity model instead of `mcp.server.*`; the project should migrate the bridge once an accepted direction exists.
+- Maintainers may split lifecycle modernization and server metadata into separate changes. That is compatible with the goal and should not be treated as rejection.
+- If maintainers determine that an existing standard field already carries the same client-visible protocol semantics, stop proposing a new attribute and add compatibility for that field.
+- If protocol-reported name/version is considered too weak or ambiguous for a semantic convention, retain it only as declared project provenance and validate a second official SDK before broadening support.
+- Issue submission is an external contribution attempt, not proof of acceptance. Do not mark the standards direction validated until maintainers respond.
+
+### Next smallest falsifiable test
+
+Monitor issue [`#437`](https://github.com/open-telemetry/semantic-conventions-genai/issues/437) and obtain maintainer feedback on three decisions: the peer server metadata model, version-aware treatment of `mcp.session.id` and session metrics, and a `2026-07-28` reference scenario.
+
+The test passes when maintainers confirm the gap and choose a concrete direction, even if the final names differ. It fails if the use case is rejected or is already represented by an existing convention; in that case, record the decision, update the compatibility bridge, and test the accepted model rather than defending the draft.
+
 ## Release calibration template
 
 For each later release, append a dated section containing:

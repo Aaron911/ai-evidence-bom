@@ -41,7 +41,10 @@ Exit gate: five real drift scenarios are detected with documented evidence and n
 
 ## Phase 3 — external validation
 
-- [ ] Submit one upstream OpenTelemetry, SPDX, CycloneDX, or framework contribution
+- [ ] Complete one upstream OpenTelemetry, SPDX, CycloneDX, or framework contribution
+  - [x] Prepare an evidence-backed OpenTelemetry MCP `2026-07-28` lifecycle and server-metadata proposal
+  - [x] Submit it after explicit authorization as [`open-telemetry/semantic-conventions-genai#437`](https://github.com/open-telemetry/semantic-conventions-genai/issues/437)
+  - [ ] Obtain maintainer feedback and a concrete semantic direction
 - [ ] Obtain feedback from at least three external operators
 - [ ] Run one authorized pilot against a non-demo system
 - [ ] Measure adapter maintenance effort for eight weeks

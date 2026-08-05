@@ -4,6 +4,11 @@ All notable changes to this experimental project are documented here.
 
 ## [Unreleased]
 
+### Documentation
+
+- Added an evidence-backed OpenTelemetry GenAI proposal for aligning MCP semantic conventions with the `2026-07-28` stateless lifecycle and protocol-reported server metadata.
+- Submitted the proposal as [`open-telemetry/semantic-conventions-genai#437`](https://github.com/open-telemetry/semantic-conventions-genai/issues/437); submission is not acceptance, and no new standard compatibility claim or project alias is introduced.
+
 ## [0.7.0] - 2026-08-05
 
 ### Added
