@@ -85,3 +85,22 @@ func TestParseOTLPPreservesScopeProvenance(t *testing.T) {
 		t.Fatalf("parent span ID=%q want=123", observations[0].ParentSpanID)
 	}
 }
+
+func TestParseOTLPEvidenceExtensionCanOnlyDowngrade(t *testing.T) {
+	data := []byte(`{
+	  "resourceSpans":[{"scopeSpans":[{"spans":[
+	    {"name":"declared","attributes":[{"key":"aiebom.evidence.level","value":{"stringValue":"declared"}}]},
+	    {"name":"verified","attributes":[{"key":"aiebom.evidence.level","value":{"stringValue":"verified"}}]}
+	  ]}]}]
+	}`)
+	observations, _, err := ParseOTLP(data, "receiver")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observations[0].Level != "declared" {
+		t.Fatalf("declared level=%q", observations[0].Level)
+	}
+	if observations[1].Level != "observed" {
+		t.Fatalf("verified promotion was accepted: %q", observations[1].Level)
+	}
+}

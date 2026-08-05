@@ -6,7 +6,7 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 
 > 实际运行时观察到了哪些 Agent、模型、工具、MCP Server、Prompt 和数据源，它们后来发生了什么变化？
 
-当前为实验性 v0.6，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
+当前为实验性 v0.7，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
 
 ## 当前能力
 
@@ -15,10 +15,11 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 - 构建厂商中立的 Agent 证据关系图；
 - 跨 OTLP 批次使用父子 span 关系，把模型和工具归属到正确的 Agent，并消除框架汇总 span 造成的重复模型；
 - 提供 Dify 与 Microsoft Agent Framework 的源码契约和可执行兼容性检查；
+- 结合 MCP 协议发现与运行时遥测，区分“服务端声明可用”与“Agent 实际调用”；
 - 区分 `inferred`、`declared`、`observed`、`verified` 四级证据；
 - 导出 CycloneDX 1.7；
 - 检测模型、工具、MCP、数据源和权限变化；
-- 使用 JSON 策略作为 CI 门禁；
+- 使用节点策略和有向图路径策略作为 CI 门禁；
 - 使用 Ed25519 签名并验证证据文件；
 - 默认只处理元数据，不保存 Prompt、响应、工具参数或工具结果。
 - 对在线请求限制大小，支持 gzip、可选 Bearer Token，并去除近期重复 span。
@@ -82,16 +83,17 @@ curl --fail-with-body \
 
 同一个 HTTP 地址还接受 `application/x-protobuf`，gRPC 端口实现标准 OTLP `TraceService/Export`。可通过 `GET /healthz` 检查健康状态，并通过 `/v1/evidence`、`/v1/bom`、`/v1/stats` 查看实时结果。
 
-现在可以直接接在 OpenTelemetry Collector 后面：可使用 [OTLP/HTTP Protobuf 配置](examples/otel-collector-http.yaml) 或 [OTLP/gRPC 配置](examples/otel-collector-grpc.yaml)。鉴权、请求限制、TLS 边界和协议范围见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。v0.6 只处理 traces，不接收 metrics、logs 或 profiles。
+现在可以直接接在 OpenTelemetry Collector 后面：可使用 [OTLP/HTTP Protobuf 配置](examples/otel-collector-http.yaml) 或 [OTLP/gRPC 配置](examples/otel-collector-grpc.yaml)。鉴权、请求限制、TLS 边界和协议范围见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。v0.7 只处理 traces，不接收 metrics、logs 或 profiles。
 
-无需模型 API Key 即可运行三项确定性兼容性检查：
+无需模型 API Key 即可运行四项确定性兼容性检查：
 
 ```bash
 scripts/live/verify_agent_framework.sh
 scripts/live/verify_dify_instrumentation.sh
 scripts/live/verify_dify_runtime.sh
+scripts/live/verify_mcp_runtime.sh
 ```
 
-第一项运行 Microsoft Agent Framework 的真实 Agent、模型遥测和工具调用链路；第二项快速隔离执行 Dify 1.16.1 的真实 OTel handler/parser；第三项启动官方最小 Dify 应用栈，安装经过 SHA-256 校验的官方 OpenAI 插件包，并在无模型 API Key、无付费调用的条件下执行包含 LLM 和工具节点的工作流。第三项需要 Docker，冷启动需要联网下载固定版本源码和插件。证据等级和限制见 [兼容矩阵](docs/COMPATIBILITY.md) 与 [v0.6 验证记录](docs/evidence/v0.6.0.md)。
+第一项运行 Microsoft Agent Framework 的真实 Agent、模型遥测和工具调用链路；第二项快速隔离执行 Dify 1.16.1 的真实 OTel handler/parser；第三项启动官方最小 Dify 应用栈；第四项运行官方 Go MCP SDK v1.7.0 的真实 stdio 客户端/服务端，通过 `server/discover` 获得稳定服务身份，并验证能力漂移和 `Agent → MCP Server → Tool` 路径策略。MCP SDK 本身不会自动发出 OTLP，本测试在应用边界插桩；`aiebom.mcp.server.*` 是明确标注的项目扩展，不冒充 OTel 标准字段。证据等级和限制见 [兼容矩阵](docs/COMPATIBILITY.md)、[v0.6 验证记录](docs/evidence/v0.6.0.md) 与 [v0.7 验证记录](docs/evidence/v0.7.0.md)。
 
 兼容矩阵见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)，每轮方向校准记录见 [docs/DIRECTION.md](docs/DIRECTION.md)。完整使用方法、架构和项目边界请查看英文 [README.md](README.md)。

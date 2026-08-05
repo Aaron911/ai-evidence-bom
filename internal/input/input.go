@@ -178,7 +178,7 @@ func ParseOTLP(data []byte, fallbackSource string) ([]Observation, string, error
 				}
 				observations = append(observations, Observation{
 					Timestamp:    nanoTime(span.StartTimeUnixNano),
-					Level:        model.EvidenceObserved,
+					Level:        otlpEvidenceLevel(attrs),
 					Source:       serviceName,
 					TraceID:      span.TraceID,
 					SpanID:       span.SpanID,
@@ -192,6 +192,20 @@ func ParseOTLP(data []byte, fallbackSource string) ([]Observation, string, error
 		documentSource = "otlp"
 	}
 	return observations, documentSource, nil
+}
+
+// otlpEvidenceLevel accepts a project extension only when it lowers the
+// default strength of runtime OTLP evidence. An exporter cannot promote a span
+// to verified evidence merely by setting an attribute.
+func otlpEvidenceLevel(attributes map[string]string) model.EvidenceLevel {
+	switch model.EvidenceLevel(strings.TrimSpace(attributes["aiebom.evidence.level"])) {
+	case model.EvidenceInferred:
+		return model.EvidenceInferred
+	case model.EvidenceDeclared:
+		return model.EvidenceDeclared
+	default:
+		return model.EvidenceObserved
+	}
 }
 
 func attributes(values []otlpKeyValue) map[string]string {

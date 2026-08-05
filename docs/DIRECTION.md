@@ -115,6 +115,41 @@ Execute one real MCP client/server tool call with standard telemetry and a stabl
 
 The test fails if server identity can only be guessed from tool text or network content, if the capability change cannot be tied to the invoking agent, or if policy evaluation requires a framework-specific private transport. A failure should be recorded as an MCP telemetry-standard gap before adding an adapter.
 
+## v0.7 calibration — 2026-08-05
+
+### Uncertainty tested
+
+Can one real MCP stdio client/server interaction establish stable, non-content-derived `Agent → MCP Server → Tool` evidence and detect an added server capability without falsely claiming that the Agent invoked it?
+
+### Evidence gained
+
+- Official MCP Go SDK v1.7.0 completed `server/discover`, `tools/list`, and `tools/call` in separate client/server processes and negotiated protocol `2026-07-28`.
+- `serverInfo.name` and version provide a stable logical identity independent of tool descriptions, arguments, results, process path, and network content.
+- A baseline with `weather.lookup` and a changed server that also declares `shell.execute` normalize to the same Agent and server identities. The called weather tool becomes observed; the uncalled shell tool remains declared.
+- Generic graph diff detects the added capability node and `provides` edge. A bounded directed path policy passes the baseline and rejects `Agent -[connects_to]-> Server -[provides]-> shell.execute` in the changed graph.
+- Description, schema, argument, and result markers do not reach graph, diff, policy, or CycloneDX output.
+- Negative evidence matters: the official SDK does not auto-emit OTLP, and the current Development-status OTel MCP convention has no logical server-name field. Its documented lifecycle still centers legacy methods while MCP `2026-07-28` moved to `server/discover` and per-request metadata.
+
+### Decision
+
+**Continue, while moving the next effort upstream rather than multiplying private adapters.** MCP runtime evidence is feasible when protocol discovery supplies identity and OTel supplies observed operations. The explicit `aiebom.mcp.*` bridge is acceptable as a tested compatibility boundary, but it should not quietly become a permanent competing convention.
+
+v0.7 also completes the first Phase 2 drift scenario and the minimum graph-path policy primitive. The project should not expand this into active tool execution, trust tool descriptions/annotations, add a dashboard, or claim zero-code MCP coverage.
+
+### Risks and pivot signals
+
+- If OTel maintainers choose a different stable server-identity model, migrate the bridge and preserve legacy input compatibility rather than defending the current attribute name.
+- If a second official SDK cannot expose `serverInfo` and `tools/list` without a private transport hook, narrow support to SDKs with protocol-level discovery access.
+- If operators consider tool names and schema digests too sensitive, add configurable capability redaction before collecting broader real-world samples.
+- If protocol and telemetry lifecycle drift repeatedly requires substantial compatibility code, move that mapping into a small versioned adapter package and measure maintenance cost.
+- Declared capability reachability is not actual execution. Any policy or report that collapses `declared` and `observed` would invalidate the evidence thesis.
+
+### Next smallest falsifiable test
+
+Prepare one evidence-backed OpenTelemetry GenAI proposal covering MCP `2026-07-28` lifecycle names and stable logical server identity. The test passes if maintainers confirm the gap and accept a concrete direction (even with different attribute names); it fails if the use case is rejected or already represented by a standard field we missed.
+
+Until that feedback exists, do not add another project-specific server-identity alias. If the proposal is rejected, retain the explicit extension and validate the same identity/capability semantics with one second official MCP SDK before expanding product scope.
+
 ## Release calibration template
 
 For each later release, append a dated section containing:

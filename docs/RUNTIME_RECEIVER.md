@@ -92,6 +92,6 @@ The built-in servers do not terminate TLS. Plaintext is intended only for loopba
 
 ## Protocol scope
 
-v0.6 accepts OTLP trace `ExportTraceServiceRequest` messages over HTTP/JSON, HTTP/protobuf, and gRPC/protobuf. Unknown protobuf fields are discarded for forward compatibility. Resource attributes, instrumentation scope provenance, span attributes, names, timestamps, trace IDs, span IDs, and parent span IDs pass through one normalizer.
+v0.7 accepts OTLP trace `ExportTraceServiceRequest` messages over HTTP/JSON, HTTP/protobuf, and gRPC/protobuf. Unknown protobuf fields are discarded for forward compatibility. Resource attributes, instrumentation scope provenance, span attributes, names, timestamps, trace IDs, span IDs, and parent span IDs pass through one normalizer.
 
 Metrics, logs, and profiles are intentionally not registered or exposed. Partial-success responses are not currently generated: a syntactically valid request is accepted as a whole, while malformed input or persistence failure returns the appropriate HTTP status or gRPC status code.

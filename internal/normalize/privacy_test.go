@@ -55,3 +55,28 @@ func TestMetadataOnlyObservationRetainsPromptPresenceAndHMACWithoutContent(t *te
 	}
 	t.Fatal("sanitized prompt observation did not produce prompt evidence")
 }
+
+func TestMetadataOnlyObservationRetainsMCPIdentityButDropsContent(t *testing.T) {
+	observation := inputpkg.Observation{Attributes: map[string]string{
+		"aiebom.mcp.server.name":              "demo-security-tools",
+		"aiebom.mcp.server.identity_source":   "server_info",
+		"aiebom.mcp.discovery.source":         "tools/list",
+		"aiebom.mcp.tool.input_schema_sha256": "digest",
+		"mcp.method.name":                     "tools/call",
+		"mcp.protocol.version":                "2026-07-28",
+		"network.transport":                   "pipe",
+		"gen_ai.tool.call.arguments":          "PRIVATE_ARGUMENT_MUST_NOT_LEAK",
+		"gen_ai.tool.call.result":             "PRIVATE_RESULT_MUST_NOT_LEAK",
+	}}
+	safe := MetadataOnlyObservation(observation, nil)
+	if safe.Attributes["aiebom.mcp.server.name"] != "demo-security-tools" ||
+		safe.Attributes["mcp.protocol.version"] != "2026-07-28" ||
+		safe.Attributes["aiebom.mcp.tool.input_schema_sha256"] != "digest" {
+		t.Fatalf("MCP evidence metadata was removed: %+v", safe.Attributes)
+	}
+	for _, value := range safe.Attributes {
+		if strings.Contains(value, "MUST_NOT_LEAK") {
+			t.Fatalf("MCP content retained: %+v", safe.Attributes)
+		}
+	}
+}

@@ -23,16 +23,17 @@ This roadmap is organized around falsifiable adoption gates rather than a promis
   - [x] Dify isolated instrumentation execution
   - [x] Complete Dify application runtime
 - [x] Normalize the core current OpenTelemetry GenAI model, agent, tool, and retrieval attributes
-- [ ] Add fixtures for model calls, MCP tool calls, retrieval, and multi-agent handoff
+- [x] Add a real MCP stdio tool-call fixture with protocol-derived server identity and declared capability drift
+- [ ] Add fixtures for retrieval and multi-agent handoff
 - [x] Publish an evidence-graded compatibility matrix
 
-Exit gate: live exports from two unrelated frameworks produce the same core graph semantics for equivalent behavior. **The core exit gate passed in v0.6.** Retrieval, MCP, and multi-agent fixtures remain useful coverage work, but they no longer block beginning Phase 2 evidence-quality validation.
+Exit gate: live exports from two unrelated frameworks produce the same core graph semantics for equivalent behavior. **The core exit gate passed in v0.6.** Retrieval and multi-agent fixtures remain useful coverage work, but they no longer block Phase 2 evidence-quality validation. MCP gained a real stdio runtime path in v0.7.
 
 ## Phase 2 — evidence quality
 
 - [ ] Integrate OpenSSF Model Signing verification for local model artifacts
 - [ ] Add confidence and source precedence rules
-- [ ] Add graph-path policies and capability escalation detection
+- [x] Add bounded graph-path policies and MCP capability escalation detection
 - [ ] Generate signed, reproducible snapshots with a canonical representation
 - [ ] Validate CycloneDX output against the official schema in CI
 

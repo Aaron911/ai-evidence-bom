@@ -11,8 +11,6 @@ import (
 
 	collectortracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
-
-	"github.com/Aaron911/ai-evidence-bom/internal/model"
 )
 
 // ParseOTLPProto converts an OTLP protobuf ExportTraceServiceRequest into the
@@ -54,7 +52,7 @@ func ParseOTLPProto(request *collectortracepb.ExportTraceServiceRequest, fallbac
 				}
 				observations = append(observations, Observation{
 					Timestamp:    protoNanoTime(span.GetStartTimeUnixNano()),
-					Level:        model.EvidenceObserved,
+					Level:        otlpEvidenceLevel(attrs),
 					Source:       serviceName,
 					TraceID:      hex.EncodeToString(span.GetTraceId()),
 					SpanID:       hex.EncodeToString(span.GetSpanId()),

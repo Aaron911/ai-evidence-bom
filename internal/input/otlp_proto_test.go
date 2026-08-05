@@ -69,6 +69,23 @@ func TestParseOTLPProtoAcceptsEmptyRequest(t *testing.T) {
 	}
 }
 
+func TestParseOTLPProtoEvidenceExtensionCanOnlyDowngrade(t *testing.T) {
+	request := &collectortracepb.ExportTraceServiceRequest{
+		ResourceSpans: []*tracepb.ResourceSpans{{
+			ScopeSpans: []*tracepb.ScopeSpans{{Spans: []*tracepb.Span{{
+				Attributes: []*commonpb.KeyValue{stringKeyValue("aiebom.evidence.level", "declared")},
+			}}}},
+		}},
+	}
+	observations, _, err := ParseOTLPProto(request, "receiver")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observations[0].Level != "declared" {
+		t.Fatalf("level=%q want=declared", observations[0].Level)
+	}
+}
+
 func stringKeyValue(key, value string) *commonpb.KeyValue {
 	return &commonpb.KeyValue{
 		Key: key,

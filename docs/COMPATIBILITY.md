@@ -11,7 +11,7 @@ Compatibility claims are evidence-graded. A green source contract does not imply
 | Live capture | A framework runtime has exported a trace through a standard OTLP transport and the resulting graph has been verified. |
 | Production validated | An authorized non-demo workload has run long enough to exercise relevant paths and operational limits. |
 
-v0.6 reaches **live capture** for both the Microsoft Agent Framework core path and a complete Dify application workflow. Neither framework is production validated. Coverage remains limited to the paths described below.
+v0.7 reaches **live capture** for the Microsoft Agent Framework core path, a complete Dify application workflow, and one official MCP Go SDK stdio client/server path. None is production validated. Coverage remains limited to the paths described below.
 
 ## v0.6 matrix
 
@@ -25,6 +25,21 @@ v0.6 reaches **live capture** for both the Microsoft Agent Framework core path a
 | Retrieval data source | Retrieval query/documents exist, but the reviewed path does not supply a stable data-source ID | Not yet source-validated | Not claimed. Content is never used as identity. |
 | MCP server | Tool activity alone does not establish stable MCP server identity | MCP method/network details may exist without a stable server ID, especially for stdio | Partial telemetry is insufficient; no MCP server node is invented. |
 | Multi-agent handoff | Not validated | Not validated | Not claimed. |
+
+## v0.7 MCP runtime boundary
+
+| Concern | Upstream behavior | v0.7 treatment |
+|---|---|---|
+| Protocol runtime | Official Go SDK v1.7.0 client and server over `CommandTransport`/`StdioTransport`; negotiated MCP `2026-07-28` | Real `server/discover`, `tools/list`, and `tools/call` execute in separate processes. |
+| Server identity | `server/discover` returns `serverInfo.name` and `serverInfo.version` | Identity is protocol-derived, non-content-based, and attached with the explicit `aiebom.mcp.server.*` extension. |
+| Standard telemetry | Current OTel MCP conventions define method, protocol version, tool name, and `network.transport=pipe`, but no logical server-name field | Application middleware emits the standard attributes around actual SDK list/call operations. The SDK is not claimed to auto-emit OTLP. |
+| Declared capability | `tools/list` returns tool definitions and schemas | Tool name, selected annotation hints, and input-schema digest are `declared`; descriptions and schema bodies are discarded. |
+| Observed invocation | `tools/call` executes `weather.lookup` | The tool, Agent invocation, server connection, and provider relationship become `observed`. |
+| Capability drift | Changed server adds `shell.execute` but the Agent never calls it | Diff reports the added declared tool and `provides` edge; it does not add an `invokes` edge. |
+| Path policy | Agent connects to a server that provides the added tool | The baseline passes and the changed graph fails `agent -[connects_to]-> mcp_server -[provides]-> shell.execute`. |
+| Privacy | MCP descriptions, schema, arguments, and results may contain sensitive data | Marker assertions prove none reach graph or CycloneDX; only the input-schema digest is retained. |
+
+This is client-side application instrumentation and protocol discovery, not server-side OTel instrumentation, cross-process trace-context validation, universal MCP client coverage, or production validation. MCP annotation hints are recorded as untrusted declarations.
 
 Related spans may be split across OTLP export requests. v0.6 delays unresolved children in a bounded metadata-only queue, then releases them when the parent context arrives. This behavior is regression-tested with child-first Dify spans; queued observations exclude prompt/input/output bodies and tool arguments/results.
 
@@ -47,11 +62,12 @@ Run the executable checks with:
 scripts/live/verify_agent_framework.sh
 scripts/live/verify_dify_instrumentation.sh
 scripts/live/verify_dify_runtime.sh
+scripts/live/verify_mcp_runtime.sh
 ```
 
-The lightweight scripts require Go 1.26.5+, Python 3.12+, `uv`, `git`, `curl`, and `jq`. The full Dify check additionally requires Docker Compose, `tar`, and a SHA-256 utility. Cold runs need network access for pinned source, packages, and the plugin artifact; no check needs model credentials or makes a paid model call.
+The lightweight framework scripts require Go 1.26.5+, Python 3.12+, `uv`, `git`, `curl`, and `jq`. The MCP check requires Go 1.26.5+, `curl`, and `jq`. The full Dify check additionally requires Docker Compose, `tar`, and a SHA-256 utility. Cold runs need network access for pinned source, packages, and the plugin artifact; no check needs model credentials or makes a paid model call.
 
-The Agent Framework and isolated Dify checks exercise equivalent `gpt-5` and `weather.lookup` behavior. The full Dify workflow uses the official OpenAI plugin with deterministic local responses and exercises `gpt-4o` plus the built-in `time.current_time` tool. Every executable check requires stable agent, model, tool, `uses`, and `invokes` semantics and fails if a sensitive marker reaches the graph or CycloneDX output.
+The Agent Framework and isolated Dify checks exercise equivalent `gpt-5` and `weather.lookup` behavior. The full Dify workflow uses the official OpenAI plugin with deterministic local responses and exercises `gpt-4o` plus the built-in `time.current_time` tool. Framework checks require stable agent/model/tool semantics; the MCP check requires stable agent/server/tool capability semantics. Every check fails if a sensitive marker reaches the graph or CycloneDX output.
 
 ## Pinned upstream evidence
 
@@ -59,9 +75,11 @@ The fixtures are manually minimized contracts derived from upstream source, not 
 
 - Dify commit [`3ada29b`](https://github.com/langgenius/dify/tree/3ada29bbe06a33b9679b30f37a995562118aa173): [OTLP exporter selection](https://github.com/langgenius/dify/blob/3ada29bbe06a33b9679b30f37a995562118aa173/api/extensions/ext_otel.py) and [GenAI attributes](https://github.com/langgenius/dify/blob/3ada29bbe06a33b9679b30f37a995562118aa173/api/extensions/otel/semconv/gen_ai.py).
 - Microsoft Agent Framework commit [`07511b8`](https://github.com/microsoft/agent-framework/tree/07511b80c9bd6369f1dab00981d744354e24d1a9): [Python observability instrumentation](https://github.com/microsoft/agent-framework/blob/07511b80c9bd6369f1dab00981d744354e24d1a9/python/packages/core/agent_framework/observability.py).
+- Official MCP Go SDK [`v1.7.0`](https://github.com/modelcontextprotocol/go-sdk/releases/tag/v1.7.0), commit [`bc72835`](https://github.com/modelcontextprotocol/go-sdk/tree/bc72835f62eb94d0fb484439f886b6885b075f36), with MCP `2026-07-28` support.
+- OpenTelemetry GenAI MCP conventions commit [`7e6e188`](https://github.com/open-telemetry/semantic-conventions-genai/tree/7e6e1884b242a277e6e2494e698f69481fe6fea8), status Development.
 
 The live Microsoft check uses released `agent-framework-core==1.13.0`. The lightweight Dify check loads the handler and parsers directly from commit `3ada29b`, with surrounding application/Graphon objects replaced by deterministic stubs.
 
 The full Dify check runs `langgenius/dify-api:1.16.1`, `langgenius/dify-plugin-daemon:0.6.3-local`, PostgreSQL, and Redis from the same pinned Dify commit. It installs official OpenAI plugin identifier `langgenius/openai:0.2.5@373362a028986aae53a7baf73a7f11991ba3c22c69eaf97d6cde048cfd4a9f98`; the downloaded package must match SHA-256 `e055503b333915818e1c26654276cceaa4d0498ced726c3a752087394b0b00b3`. The package is uploaded through Dify's supported console API so plugin-container Marketplace DNS is not part of the telemetry assertion. No Dify source or runtime image is patched. See [the v0.6 evidence record](evidence/v0.6.0.md) for the exact boundary and CI run.
 
-Because upstream telemetry conventions evolve, a source commit or released package change must trigger fixture and executable-check review.
+Because upstream protocol and telemetry conventions evolve independently, a source commit, SDK release, or semantic-convention change must trigger fixture and executable-check review. In particular, the current OTel document still centers legacy lifecycle examples while MCP `2026-07-28` uses `server/discover` and per-request metadata; v0.7 records this as a standards gap rather than silently treating project aliases as standard.

@@ -68,10 +68,11 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 	serviceName := first(attrs, "service.name", "service.namespace", "host.name")
 	agentName := first(attrs, "gen_ai.agent.name", "agent.name")
 	agentNameFromService := false
+	mcpDeclaration := first(attrs, "aiebom.mcp.discovery.source") != ""
 	if agentName == "" && operation == "invoke_agent" {
 		agentName = spanEntityName(spanName, "invoke_agent")
 	}
-	if agentName == "" && hasGenAIAttributes(attrs) {
+	if agentName == "" && hasGenAIAttributes(attrs) && !mcpDeclaration {
 		agentName = serviceName
 		agentNameFromService = agentName != ""
 	}
@@ -143,16 +144,32 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 		}
 	}
 
-	mcpName := first(attrs, "mcp.server.name", "mcp.server.id", "mcp.server.url")
+	mcpName := first(attrs,
+		"aiebom.mcp.server.name",
+		"aiebom.mcp.server.id",
+		"mcp.server.name",
+		"mcp.server.id",
+		"mcp.server.url",
+	)
 	var mcpNode *model.Node
 	if mcpName != "" {
 		mcpNode = b.addNode(nodeInput{
-			Type:       "mcp_server",
-			Name:       mcpName,
-			Identity:   firstNonEmpty(first(attrs, "mcp.server.id"), mcpName),
-			Version:    first(attrs, "mcp.server.version"),
-			Provider:   first(attrs, "mcp.server.provider"),
-			Properties: selected(attrs, "mcp.server.url", "mcp.transport", "server.address", "server.port"),
+			Type:     "mcp_server",
+			Name:     mcpName,
+			Identity: firstNonEmpty(first(attrs, "aiebom.mcp.server.id", "mcp.server.id"), mcpName),
+			Version:  first(attrs, "aiebom.mcp.server.version", "mcp.server.version"),
+			Provider: first(attrs, "aiebom.mcp.server.provider", "mcp.server.provider"),
+			Properties: selected(attrs,
+				"aiebom.mcp.server.identity_source",
+				"aiebom.mcp.discovery.source",
+				"mcp.protocol.version",
+				"mcp.method.name",
+				"mcp.server.url",
+				"mcp.transport",
+				"network.transport",
+				"server.address",
+				"server.port",
+			),
 		}, observation)
 		if agent != nil {
 			b.addEdge(agent.ID, mcpNode.ID, "connects_to", observation)
@@ -170,17 +187,29 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 	}
 	if toolName != "" {
 		toolNode := b.addNode(nodeInput{
-			Type:       "tool",
-			Name:       toolName,
-			Version:    first(attrs, "gen_ai.tool.version", "mcp.tool.version"),
-			Provider:   firstNonEmpty(mcpName, provider),
-			Properties: selected(attrs, "gen_ai.tool.type", "mcp.tool.read_only", "mcp.tool.destructive"),
+			Type:     "tool",
+			Name:     toolName,
+			Version:  first(attrs, "gen_ai.tool.version", "aiebom.mcp.tool.version", "mcp.tool.version"),
+			Provider: firstNonEmpty(mcpName, provider),
+			Properties: selected(attrs,
+				"gen_ai.tool.type",
+				"aiebom.mcp.discovery.source",
+				"aiebom.mcp.tool.input_schema_sha256",
+				"aiebom.mcp.tool.read_only",
+				"aiebom.mcp.tool.destructive",
+				"aiebom.mcp.tool.annotations_untrusted",
+				"mcp.tool.read_only",
+				"mcp.tool.destructive",
+				"mcp.method.name",
+				"mcp.protocol.version",
+				"network.transport",
+			),
 		}, observation)
 		if agent != nil {
 			b.addEdge(agent.ID, toolNode.ID, "invokes", observation)
 		}
 		if mcpNode != nil {
-			b.addEdge(toolNode.ID, mcpNode.ID, "provided_by", observation)
+			b.addEdge(mcpNode.ID, toolNode.ID, "provides", observation)
 		}
 	}
 

@@ -4,6 +4,33 @@ All notable changes to this experimental project are documented here.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-05
+
+### Added
+
+- A deterministic official MCP Go SDK v1.7.0 client/server live check over stdio, exercising `server/discover`, `tools/list`, and `tools/call` on protocol `2026-07-28`.
+- Protocol-derived MCP server identity and content-free declared capability evidence using an explicitly namespaced `aiebom.mcp.*` bridge.
+- Bounded directed graph-path policies with typed/evidence-aware node selectors and exact relationship sequences.
+- Capability-drift coverage proving that an added but uninvoked `shell.execute` tool is detected by diff and policy without an `invokes` claim.
+
+### Changed
+
+- MCP relationships now use the directed `mcp_server -[provides]-> tool` form, enabling `agent -[connects_to]-> mcp_server -[provides]-> tool` policy paths.
+- OTLP evidence defaults to observed but may be downgraded to declared or inferred by `aiebom.evidence.level`; telemetry cannot self-promote to verified.
+- MCP standard attributes and project identity extensions are documented separately; legacy `mcp.server.*` aliases remain compatibility inputs only.
+
+### Security
+
+- MCP descriptions, raw schemas, arguments, and results remain excluded from evidence; the live check fails on marker leakage.
+- Input-schema bodies are reduced to SHA-256 drift fingerprints, and tool annotation hints are labeled untrusted.
+- Path-policy traversal is bounded to eight relationships and reports the exact matching node/relation path.
+
+### Known gaps
+
+- The official MCP SDK does not emit OTLP automatically; v0.7 validates application instrumentation around real SDK calls.
+- Current OTel MCP conventions do not define stable logical server identity and lag the MCP `2026-07-28` lifecycle; `aiebom.mcp.server.*` is a project bridge, not a standard claim.
+- Server-side spans, cross-process trace propagation, remote HTTP transports, a second SDK, and production workloads remain unvalidated.
+
 ## [0.6.0] - 2026-08-04
 
 ### Added
@@ -134,7 +161,8 @@ All notable changes to this experimental project are documented here.
 
 - Initial evidence graph, OTLP JSON file scan, CycloneDX export, diff, policy, prompt HMAC, and Ed25519 signing prototype.
 
-[Unreleased]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Aaron911/ai-evidence-bom/compare/v0.3.0...v0.4.0

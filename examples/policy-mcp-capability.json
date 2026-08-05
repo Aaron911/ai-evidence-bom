@@ -1,0 +1,23 @@
+{
+  "version": "1",
+  "deniedPaths": [
+    {
+      "name": "agent-to-shell-capability",
+      "from": {
+        "type": "agent",
+        "minimumEvidence": "observed"
+      },
+      "via": [
+        {
+          "type": "mcp_server"
+        }
+      ],
+      "relations": ["connects_to", "provides"],
+      "to": {
+        "type": "tool",
+        "namePattern": "^shell\\.execute$",
+        "minimumEvidence": "declared"
+      }
+    }
+  ]
+}

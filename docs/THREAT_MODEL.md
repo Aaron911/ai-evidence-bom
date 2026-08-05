@@ -15,7 +15,7 @@
 4. Policy authors are trusted to define organizational intent.
 5. Hosted model providers remain outside the verifier's control.
 
-## Addressed through v0.6
+## Addressed through v0.7
 
 - Evidence provenance is explicit rather than collapsing declarations and observations.
 - Prompt and tool content is not retained.
@@ -30,6 +30,10 @@
 - Recent trace/span pairs are deduplicated to prevent common OTLP retries from inflating evidence counts.
 - Cross-batch parent correlation retains only bounded, allowlisted metadata; content fields are removed before an unresolved child is queued.
 - Evidence snapshots are written through atomic replacement rather than in-place truncation.
+- MCP `serverInfo` identity and `tools/list` capabilities are retained as declarations; only runtime calls upgrade tool evidence to observed.
+- Directed path policies detect reachability such as an observed Agent connection to a server that declares a denied tool, without falsely claiming the tool was invoked.
+- MCP descriptions, schema bodies, arguments, and results are discarded; only bounded identity metadata, annotation hints, and an input-schema digest survive.
+- The OTLP evidence-level extension can only downgrade evidence and cannot self-promote a span to verified.
 
 ## Known limitations
 
@@ -39,10 +43,13 @@
 - The built-in HTTP and gRPC servers do not terminate TLS. Remote use requires a trusted TLS proxy and access controls.
 - Retry deduplication is bounded and in-memory, so its history resets on restart and very old duplicates may be counted again.
 - A sampled-out or missing parent can leave child metadata pending until queue pressure; monitor `pendingSpans`. Pending context is not persisted across restarts.
-- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.6 protocol scope.
+- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.7 protocol scope.
 - There is no sandbox around input parsing.
 - Hosted model aliases and weights cannot be independently verified.
 - Signatures cover raw bytes, not canonical JSON.
-- The policy language is intentionally small and does not yet reason over paths or aggregate behavior.
+- MCP `serverInfo`, `tools/list`, and annotations are statements from an untrusted server. They do not prove the implementation is benign or that its runtime behavior matches its schema.
+- Current OpenTelemetry MCP conventions do not define stable logical server identity. The `aiebom.mcp.server.*` bridge is an explicit project extension derived from protocol discovery, not a standard attribute.
+- The official Go MCP SDK does not emit OTel automatically. v0.7 validates application instrumentation around real SDK calls, not universal zero-code capture or server-side trace-context propagation.
+- Path policy matches exact directed relation sequences and does not yet support counts, time windows, negative reachability, or aggregate behavior.
 
 Security issues should follow [SECURITY.md](../SECURITY.md), not a public issue containing sensitive reproduction material.

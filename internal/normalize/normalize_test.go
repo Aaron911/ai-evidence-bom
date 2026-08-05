@@ -243,6 +243,86 @@ func TestConcreteModelSuppressesOnlyNearestAgentSummary(t *testing.T) {
 	assertNode(t, graph, model.StableNodeID("model", "openai", "specialist-model"), "model", "specialist-model", "openai")
 }
 
+func TestBuildMergesDeclaredMCPDiscoveryWithObservedToolCall(t *testing.T) {
+	timestamp := time.Unix(100, 0).UTC()
+	serverAttributes := map[string]string{
+		"aiebom.mcp.server.name":            "demo-security-tools",
+		"aiebom.mcp.server.version":         "1.0.0",
+		"aiebom.mcp.server.identity_source": "server_info",
+		"aiebom.mcp.discovery.source":       "tools/list",
+		"mcp.protocol.version":              "2026-07-28",
+		"network.transport":                 "pipe",
+	}
+	declaration := func(toolName string) inputpkg.Observation {
+		attributes := clone(serverAttributes)
+		attributes["service.name"] = "mcp-runtime-client"
+		attributes["gen_ai.tool.name"] = toolName
+		attributes["aiebom.mcp.tool.input_schema_sha256"] = "schema-digest"
+		return inputpkg.Observation{
+			Timestamp:  timestamp,
+			Level:      model.EvidenceDeclared,
+			Source:     "mcp-runtime-client",
+			Attributes: attributes,
+		}
+	}
+	graph := Build([]inputpkg.Observation{
+		declaration("weather.lookup"),
+		declaration("shell.execute"),
+		{
+			Timestamp: timestamp.Add(time.Second),
+			Level:     model.EvidenceObserved,
+			Source:    "mcp-runtime-client",
+			TraceID:   "trace-1",
+			SpanID:    "agent-span",
+			Attributes: map[string]string{
+				"service.name":          "mcp-runtime-client",
+				"gen_ai.operation.name": "invoke_agent",
+				"gen_ai.agent.id":       "security-agent",
+				"gen_ai.agent.name":     "security-agent",
+			},
+		},
+		{
+			Timestamp:    timestamp.Add(2 * time.Second),
+			Level:        model.EvidenceObserved,
+			Source:       "mcp-runtime-client",
+			TraceID:      "trace-1",
+			SpanID:       "tool-span",
+			ParentSpanID: "agent-span",
+			Attributes: map[string]string{
+				"service.name":                      "mcp-runtime-client",
+				"gen_ai.operation.name":             "execute_tool",
+				"gen_ai.tool.name":                  "weather.lookup",
+				"aiebom.mcp.server.name":            "demo-security-tools",
+				"aiebom.mcp.server.version":         "1.0.0",
+				"aiebom.mcp.server.identity_source": "server_info",
+				"mcp.method.name":                   "tools/call",
+				"mcp.protocol.version":              "2026-07-28",
+				"network.transport":                 "pipe",
+			},
+		},
+	}, "mcp-runtime-client", timestamp.Add(3*time.Second))
+
+	agentID := model.StableNodeID("agent", "", "security-agent")
+	serverID := model.StableNodeID("mcp_server", "", "demo-security-tools")
+	weatherID := model.StableNodeID("tool", "demo-security-tools", "weather.lookup")
+	shellID := model.StableNodeID("tool", "demo-security-tools", "shell.execute")
+	if len(graph.Nodes) != 4 || len(graph.Edges) != 4 {
+		t.Fatalf("unexpected graph size: nodes=%d edges=%d\n%+v\n%+v", len(graph.Nodes), len(graph.Edges), graph.Nodes, graph.Edges)
+	}
+	assertEdge(t, graph, agentID, serverID, "connects_to")
+	assertEdge(t, graph, agentID, weatherID, "invokes")
+	assertEdge(t, graph, serverID, weatherID, "provides")
+	assertEdge(t, graph, serverID, shellID, "provides")
+	for _, node := range graph.Nodes {
+		if node.ID == shellID && node.Evidence.Level != model.EvidenceDeclared {
+			t.Fatalf("uninvoked capability evidence=%q want=declared", node.Evidence.Level)
+		}
+		if node.Type == "agent" && node.ID != agentID {
+			t.Fatalf("MCP discovery invented a service fallback agent: %+v", node)
+		}
+	}
+}
+
 func assertNode(t *testing.T, graph model.Graph, id, nodeType, name, provider string) {
 	t.Helper()
 	for _, node := range graph.Nodes {
