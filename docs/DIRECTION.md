@@ -201,6 +201,7 @@ Does the current CycloneDX 1.7 exporter actually conform to the official JSON Sc
 - The official schema exposed that the exporter still used the valid but deprecated legacy `metadata.tools` array. The exporter now emits the current `metadata.tools.components` form and retains no empty `bom-ref` for the generator component.
 - The reusable gate validates a real current-source export and then changes `bomFormat` to `NotCycloneDX`. It passes only when the real export is accepted and the negative control is rejected specifically at `/bomFormat`.
 - Race-enabled unit tests and `go vet` passed in a disposable copy using the locally available Go 1.26.2 toolchain. The repository requirement remains Go 1.26.5; downloading that toolchain locally failed with a TLS handshake timeout, so the pushed GitHub gate remains the authoritative required-version run.
+- GitHub Actions [`ci #12`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/31079178515) passed on the required toolchain, including the test job, all three framework-compatibility jobs, and the new positive/negative CycloneDX gate. The path-triggered full Dify workflow [`#5`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/31079178480) also passed.
 - OpenTelemetry issue [`#437`](https://github.com/open-telemetry/semantic-conventions-genai/issues/437) remains open with no maintainer comments as of this calibration. No standards acceptance is inferred from the absence of feedback.
 
 ### Decision
