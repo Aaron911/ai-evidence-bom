@@ -4,6 +4,12 @@ All notable changes to this experimental project are documented here.
 
 ## [Unreleased]
 
+### Validation
+
+- Added a CI gate that exports a real BOM, verifies the checksum-pinned official CycloneDX 1.7 JSON Schema, and validates the output against it.
+- Added a negative control proving that a deliberately invalid `bomFormat` is rejected, so a no-op validator cannot satisfy the gate.
+- Migrated BOM generator metadata from the deprecated legacy `metadata.tools` array to the CycloneDX 1.7 `metadata.tools.components` shape.
+
 ### Documentation
 
 - Added an evidence-backed OpenTelemetry GenAI proposal for aligning MCP semantic conventions with the `2026-07-28` stateless lifecycle and protocol-reported server metadata.

@@ -21,6 +21,11 @@ func TestExportMapsModelAndRelations(t *testing.T) {
 	if bom.SpecVersion != "1.7" || len(bom.Components) != 2 {
 		t.Fatalf("unexpected bom: %#v", bom)
 	}
+	if len(bom.Metadata.Tools.Components) != 1 ||
+		bom.Metadata.Tools.Components[0].Name != "aiebom" ||
+		bom.Metadata.Tools.Components[0].Type != "application" {
+		t.Fatalf("unexpected metadata tools: %#v", bom.Metadata.Tools)
+	}
 	if bom.Components[1].Type != "machine-learning-model" {
 		t.Fatalf("model component type=%q", bom.Components[1].Type)
 	}

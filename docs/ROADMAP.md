@@ -35,7 +35,7 @@ Exit gate: live exports from two unrelated frameworks produce the same core grap
 - [ ] Add confidence and source precedence rules
 - [x] Add bounded graph-path policies and MCP capability escalation detection
 - [ ] Generate signed, reproducible snapshots with a canonical representation
-- [ ] Validate CycloneDX output against the official schema in CI
+- [x] Validate CycloneDX output against the checksum-pinned official schema in CI, including a negative control
 
 Exit gate: five real drift scenarios are detected with documented evidence and no prompt content retention.
 

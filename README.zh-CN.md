@@ -17,7 +17,7 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 - 提供 Dify 与 Microsoft Agent Framework 的源码契约和可执行兼容性检查；
 - 结合 MCP 协议发现与运行时遥测，区分“服务端声明可用”与“Agent 实际调用”；
 - 区分 `inferred`、`declared`、`observed`、`verified` 四级证据；
-- 导出 CycloneDX 1.7；
+- 导出 CycloneDX 1.7，并在 CI 中使用校验和固定的官方 Schema 验证；
 - 检测模型、工具、MCP、数据源和权限变化；
 - 使用节点策略和有向图路径策略作为 CI 门禁；
 - 使用 Ed25519 签名并验证证据文件；

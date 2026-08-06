@@ -14,7 +14,13 @@ The project is in validation stage. Small, evidence-backed changes are preferred
 gofmt -w cmd internal
 go test ./...
 go vet ./...
+python3 -m pip install 'jsonschema==4.26.0'
+make validate-cyclonedx
 ```
 
-New adapters should translate into the internal evidence graph rather than adding vendor-specific concepts to the core model unless a standards mapping justifies them.
+The CycloneDX check downloads the official 1.7 JSON Schema from the tagged
+CycloneDX specification repository, verifies its pinned SHA-256, validates a
+real `aiebom scan` export, and proves that an intentionally invalid export is
+rejected.
 
+New adapters should translate into the internal evidence graph rather than adding vendor-specific concepts to the core model unless a standards mapping justifies them.

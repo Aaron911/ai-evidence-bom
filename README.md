@@ -17,7 +17,7 @@ The project is an experimental v0.7 validation build. It is not a compliance cer
 - Includes source-derived contracts plus executable compatibility checks for Dify and Microsoft Agent Framework.
 - Uses MCP protocol discovery and runtime telemetry together to distinguish declared server capabilities from observed tool calls.
 - Records evidence as `inferred`, `declared`, `observed`, or `verified`.
-- Exports CycloneDX 1.7 JSON with AI/ML component types and relationships.
+- Exports CycloneDX 1.7 JSON with AI/ML component types and relationships, validated in CI against the checksum-pinned official schema.
 - Compares two evidence graphs to find new, removed, and changed capabilities.
 - Enforces node and directed graph-path JSON policies suitable for CI gates.
 - Signs raw graph or BOM files with Ed25519 and detects tampering.

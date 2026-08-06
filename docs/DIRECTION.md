@@ -186,6 +186,42 @@ Monitor issue [`#437`](https://github.com/open-telemetry/semantic-conventions-ge
 
 The test passes when maintainers confirm the gap and choose a concrete direction, even if the final names differ. It fails if the use case is rejected or is already represented by an existing convention; in that case, record the decision, update the compatibility bridge, and test the accepted model rather than defending the draft.
 
+## v0.8 CycloneDX schema-conformance calibration — 2026-08-06
+
+This is an unreleased evidence-quality iteration, not a product or evidence-graph schema version bump.
+
+### Uncertainty tested
+
+Does the current CycloneDX 1.7 exporter actually conform to the official JSON Schema, and can a deterministic CI gate reject a structurally invalid BOM rather than merely checking project-owned Go structs?
+
+### Evidence gained
+
+- CycloneDX documents its JSON Schema as the reference implementation of the standard. The test pins the official 1.7 schema at Git blob `08d6a3c884614630075dbb841c74397fbd5fc5d2` and SHA-256 `df472ef4aaf593904c479293723a1a5c191d6672715c93b3c0b5c318f3914221`.
+- A real five-component, five-dependency `aiebom scan` export validated successfully with JSON Schema Draft 7 format checks enabled.
+- The official schema exposed that the exporter still used the valid but deprecated legacy `metadata.tools` array. The exporter now emits the current `metadata.tools.components` form and retains no empty `bom-ref` for the generator component.
+- The reusable gate validates a real current-source export and then changes `bomFormat` to `NotCycloneDX`. It passes only when the real export is accepted and the negative control is rejected specifically at `/bomFormat`.
+- Race-enabled unit tests and `go vet` passed in a disposable copy using the locally available Go 1.26.2 toolchain. The repository requirement remains Go 1.26.5; downloading that toolchain locally failed with a TLS handshake timeout, so the pushed GitHub gate remains the authoritative required-version run.
+- OpenTelemetry issue [`#437`](https://github.com/open-telemetry/semantic-conventions-genai/issues/437) remains open with no maintainer comments as of this calibration. No standards acceptance is inferred from the absence of feedback.
+
+### Decision
+
+**Continue the standards-first evidence-quality direction.** The CycloneDX claim is now backed by an independently maintained schema and a negative control, not only project tests. This strengthens output interoperability without expanding the collected evidence, adding content retention, or claiming CycloneDX certification.
+
+The deprecated tools shape was small, directly evidenced compatibility debt, so correcting it was justified in the same iteration. No unrelated framework, MCP identity alias, dashboard, vulnerability feed, or broad instrumentation work is introduced.
+
+### Risks and pivot signals
+
+- Schema validity proves structural conformance, not that every evidence mapping is semantically complete, trustworthy, or certified by CycloneDX.
+- The CI check downloads an external official artifact. A pinned SHA-256 prevents silent substitution, but upstream or network unavailability can still fail the gate; a local checksum-verified file override exists for controlled/offline reproduction.
+- The validation helper pins Python `jsonschema==4.26.0` in CI. If this test-only dependency becomes unstable or materially increases maintenance, replace it with an equivalently strict pinned validator rather than weakening the negative control.
+- `metadata.tools.components` identifies the generator, not an observed runtime component. It must not be merged into the evidence graph or interpreted as runtime evidence.
+
+### Next smallest falsifiable test
+
+Continue monitoring OpenTelemetry issue `#437`; actionable maintainer feedback preempts speculative MCP implementation. If no feedback exists at the start of the next iteration, test whether one fixed evidence graph can produce byte-identical canonical snapshot bytes and a stable signature across repeated exports, while a one-field evidence change necessarily changes the canonical digest.
+
+The test fails if reproducibility requires removing meaningful evidence timestamps, if map ordering or JSON formatting changes the signed identity, or if verification cannot clearly distinguish canonical content from transport serialization. A failure should narrow the signing claim before adding retention or attestation features.
+
 ## Release calibration template
 
 For each later release, append a dated section containing:

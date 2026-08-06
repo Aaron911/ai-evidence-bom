@@ -21,6 +21,10 @@ jobs:
       - run: go vet ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
       - run: go build ./cmd/aiebom
+      - name: Install pinned CycloneDX schema validator
+        run: python3 -m pip install --disable-pip-version-check --no-compile jsonschema==4.26.0
+      - name: Validate CycloneDX 1.7 export against the official schema
+        run: make validate-cyclonedx
 
   framework-compatibility:
     runs-on: ubuntu-latest

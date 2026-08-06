@@ -1,4 +1,4 @@
-.PHONY: build test vet demo clean
+.PHONY: build test vet validate-cyclonedx demo clean
 
 build:
 	go build -o ./bin/aiebom ./cmd/aiebom
@@ -8,6 +8,9 @@ test:
 
 vet:
 	go vet ./...
+
+validate-cyclonedx:
+	scripts/verify_cyclonedx_schema.sh
 
 demo: build
 	mkdir -p work
@@ -19,4 +22,3 @@ demo: build
 clean:
 	rm -f ./bin/aiebom
 	rm -f ./work/*.json
-

@@ -23,19 +23,17 @@ type BOM struct {
 
 type Metadata struct {
 	Timestamp time.Time  `json:"timestamp"`
-	Tools     []Tool     `json:"tools"`
+	Tools     Tools      `json:"tools"`
 	Component *Component `json:"component,omitempty"`
 }
 
-type Tool struct {
-	Vendor  string `json:"vendor"`
-	Name    string `json:"name"`
-	Version string `json:"version"`
+type Tools struct {
+	Components []Component `json:"components,omitempty"`
 }
 
 type Component struct {
 	Type       string     `json:"type"`
-	BOMRef     string     `json:"bom-ref"`
+	BOMRef     string     `json:"bom-ref,omitempty"`
 	Name       string     `json:"name"`
 	Version    string     `json:"version,omitempty"`
 	Publisher  string     `json:"publisher,omitempty"`
@@ -73,11 +71,12 @@ func Export(graph model.Graph) BOM {
 		Version: 1,
 		Metadata: Metadata{
 			Timestamp: graph.GeneratedAt,
-			Tools: []Tool{{
-				Vendor:  "AI Evidence BOM contributors",
-				Name:    "aiebom",
-				Version: model.SchemaVersion,
-			}},
+			Tools: Tools{Components: []Component{{
+				Type:      "application",
+				Name:      "aiebom",
+				Version:   model.SchemaVersion,
+				Publisher: "AI Evidence BOM contributors",
+			}}},
 		},
 	}
 	for _, node := range graph.Nodes {
