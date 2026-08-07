@@ -282,6 +282,7 @@ Can conflicting claims about one stable model identity be merged without arrival
 - Legacy v0.7 graphs cannot prove which observation supplied a mutable field. Their existing values therefore migrate as inferred candidates instead of inheriting a potentially misleading verified node summary.
 - Race-enabled Go tests, `go vet`, build, and the CycloneDX 1.7 positive/negative schema gate passed in a disposable copy on the locally available Go 1.26.2 toolchain. A real CLI run selected the verified fixture values, produced three policy conflicts, and generated and verified a v0.3/profile-v2 canonical signature.
 - Local `govulncheck` found only the same seven reachable Go 1.26.2 standard-library issues, all fixed by the repository-required Go 1.26.5. The minimum remains unchanged, and the required-version GitHub run remains the authoritative vulnerability gate.
+- GitHub Actions [`ci #16`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/31160371946) completed successfully on commit `36d7371`, covering the required Go 1.26.5 race, vet, vulnerability, build, CycloneDX, Agent Framework, Dify instrumentation, and MCP jobs. The path-triggered full Dify workflow [`#7`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/31160371962) also completed successfully.
 - OpenTelemetry issue [`#437`](https://github.com/open-telemetry/semantic-conventions-genai/issues/437) remained open with no maintainer comments at the start of this iteration, so no standard acceptance or new MCP alias is inferred.
 
 ### Decision
