@@ -72,6 +72,19 @@ In a disposable repository copy using the locally installed Go 1.26.2 toolchain:
 
 `govulncheck` did not pass on Go 1.26.2: it reported seven reachable standard-library vulnerabilities fixed by Go 1.26.5. No reachable vulnerability was reported in the newly pinned JCS dependency. The repository continues to require Go 1.26.5, so the pushed GitHub Actions run on the required toolchain is the authoritative vulnerability result; the minimum version was not weakened to make a local check green.
 
+## Required-version and regression result
+
+GitHub Actions [`ci #14`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/31145359216) passed on the repository-required Go 1.26.5 toolchain. Its successful steps include:
+
+- `go test -race ./...`;
+- `go vet ./...`;
+- `govulncheck@v1.6.0 ./...`;
+- `go build ./cmd/aiebom`;
+- the checksum-pinned CycloneDX positive and negative schema controls;
+- released Microsoft Agent Framework, pinned Dify instrumentation, and real MCP Go SDK compatibility jobs.
+
+Because the implementation changed the CLI, internal signing package, and module graph, the path-triggered complete Dify application workflow also ran. [`Dify full runtime compatibility #6`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/31145359217) passed, preserving the unmodified OTLP application-runtime evidence boundary.
+
 ## Privacy and security boundary
 
 Canonicalization is not redaction and does not read raw telemetry. It operates only on an already normalized evidence graph and signs every retained field. It introduces no prompt, model response, retrieved document, tool argument, tool result, credential, or schema-body retention.
@@ -90,4 +103,4 @@ go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 go build ./cmd/aiebom
 ```
 
-The full required-version GitHub Actions result is recorded in the direction calibration after the implementation is pushed.
+The two linked GitHub Actions runs are the authoritative remote evidence for commit [`011daee`](https://github.com/Aaron911/ai-evidence-bom/commit/011daee1d04c494736e254f4d3686521e94f3afc).

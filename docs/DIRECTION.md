@@ -241,6 +241,7 @@ Can one fixed evidence graph produce byte-identical canonical identity bytes and
 - The RFC 8785 reference Go implementation is pinned to upstream commit `19d51d7fe467d4706a3ff08adf8a748f29fc21e0` and attributed under Apache-2.0.
 - Race-enabled tests and `go vet` passed in a disposable copy on the locally available Go 1.26.2 toolchain. A real CLI scan/keygen/sign/reformat/verify run produced the same canonical digest and signature and rejected a changed `observationCount`; the CycloneDX positive/negative schema gate also remained green.
 - Local `govulncheck` correctly rejected Go 1.26.2 for seven reachable standard-library findings fixed by Go 1.26.5. The repository minimum was not lowered; the required-version GitHub run remains the authoritative vulnerability gate.
+- GitHub Actions [`ci #14`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/31145359216) passed on Go 1.26.5: race tests, `go vet`, `govulncheck`, build, the CycloneDX positive/negative gate, and all three lightweight framework/MCP compatibility jobs succeeded. The path-triggered full Dify workflow [`#6`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/31145359217) also passed against the complete application stack.
 
 ### Decision
 
