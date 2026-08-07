@@ -38,5 +38,6 @@ The live endpoints expose metadata that may still be operationally sensitive. Bo
 - A trace ID can become identifying when correlated with another telemetry backend.
 - MCP server and tool names, capability sets, and schema digests can expose operational or security posture.
 - Ed25519 signatures provide integrity and origin authentication, not confidentiality.
+- Canonical signing does not redact additional data. It signs every field already retained in the evidence graph, so access controls and retention rules still apply to the graph and its metadata.
 
 For production use, redact at the OpenTelemetry Collector before long-term storage and apply normal access-control and retention policies to both inputs and outputs.

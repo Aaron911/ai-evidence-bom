@@ -4,6 +4,17 @@ All notable changes to this experimental project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added `sign --canonical-evidence` for reproducible evidence-graph signatures across JSON whitespace, object-member order, graph collection order, and equivalent timestamp offsets.
+- Added a versioned signature-envelope profile that records the canonical payload type and RFC 8785-based canonicalization mode; `verify` selects the declared mode without guessing.
+
+### Security
+
+- Canonical evidence input rejects duplicate JSON members, duplicate graph identities, unknown graph fields, invalid UTF-8, and trailing JSON values before signing.
+- Canonical signatures use a mode-specific domain prefix, preventing a canonical v0.2 signature from being interpreted as a legacy raw-byte v0.1 signature.
+- Legacy exact-byte signing and verification remain backward compatible; canonical signing does not broaden content collection or provide confidentiality.
+
 ### Validation
 
 - Added a CI gate that exports a real BOM, verifies the checksum-pinned official CycloneDX 1.7 JSON Schema, and validates the output against it.

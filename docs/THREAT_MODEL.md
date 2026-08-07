@@ -22,6 +22,7 @@
 - Optional prompt fingerprints use a secret HMAC key rather than an unsalted digest.
 - Stable identities make unexpected capability and version drift visible.
 - Exact evidence files can be signed with Ed25519 and verified later.
+- Evidence graphs can instead be signed through an explicit RFC 8785-based canonical profile, so harmless transport reformatting and graph collection order do not change their signed identity.
 - Policy failures use a distinct exit code for CI.
 - Key generation refuses to overwrite existing key files.
 - The live receiver defaults to loopback, requires a bearer token for non-loopback binds, and compares tokens in constant time.
@@ -46,7 +47,9 @@
 - Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.7 protocol scope.
 - There is no sandbox around input parsing.
 - Hosted model aliases and weights cannot be independently verified.
-- Signatures cover raw bytes, not canonical JSON.
+- Exact-byte signing remains the default and is formatting-sensitive. Canonical signing is opt-in and currently accepts AI Evidence BOM graph JSON only; it does not implement CycloneDX JSF/JWS or canonicalize arbitrary files.
+- Canonical signatures cover every retained graph field, including meaningful evidence timestamps. Re-running collection at a new time is not the same fixed snapshot and is expected to change the digest.
+- Signature-envelope `createdAt` is informational and is not authenticated by the payload signature. Use a separate trusted timestamp or transparency service when signing time itself must be proven.
 - MCP `serverInfo`, `tools/list`, and annotations are statements from an untrusted server. They do not prove the implementation is benign or that its runtime behavior matches its schema.
 - Current OpenTelemetry MCP conventions do not define stable logical server identity. The `aiebom.mcp.server.*` bridge is an explicit project extension derived from protocol discovery, not a standard attribute.
 - The official Go MCP SDK does not emit OTel automatically. v0.7 validates application instrumentation around real SDK calls, not universal zero-code capture or server-side trace-context propagation.

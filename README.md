@@ -20,7 +20,7 @@ The project is an experimental v0.7 validation build. It is not a compliance cer
 - Exports CycloneDX 1.7 JSON with AI/ML component types and relationships, validated in CI against the checksum-pinned official schema.
 - Compares two evidence graphs to find new, removed, and changed capabilities.
 - Enforces node and directed graph-path JSON policies suitable for CI gates.
-- Signs raw graph or BOM files with Ed25519 and detects tampering.
+- Signs exact graph/BOM bytes or RFC 8785-canonical evidence-graph identities with Ed25519 and detects tampering.
 - Defaults to metadata-only processing. Prompt bodies and tool arguments are never retained.
 - Bounds live request sizes, supports gzip, optionally authenticates with a bearer token, and deduplicates recent span retries.
 
@@ -121,6 +121,7 @@ Use the same protected key for later scans. The key is never written to the grap
 ./bin/aiebom sign \
   --input work/after.evidence.json \
   --private-key work/evidence-private.pem \
+  --canonical-evidence \
   --output work/after.evidence.sig.json
 
 ./bin/aiebom verify \
@@ -129,7 +130,11 @@ Use the same protected key for later scans. The key is never written to the grap
   --signature work/after.evidence.sig.json
 ```
 
-Signatures cover the exact file bytes. Reformatting a signed JSON file invalidates the signature.
+`--canonical-evidence` is the recommended mode for evidence graphs. It strictly decodes the graph, rejects duplicate or unknown JSON members, normalizes the graph's set-like collections and timestamps, and then applies [RFC 8785 JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785.html). Equivalent whitespace, JSON object-member order, node/edge order, source order, and UTC-offset spelling therefore produce the same payload digest and deterministic Ed25519 signature for the same key. Any retained evidence-field change changes the digest and fails verification.
+
+The signature envelope records `payloadType=aiebom-evidence-graph` and `canonicalization=aiebom-evidence-v1+jcs-rfc8785`; `verify` reads these fields and never guesses the mode. The default without `--canonical-evidence` remains the backward-compatible exact-byte mode, which can also sign CycloneDX or another file and is invalidated by reformatting. Canonical mode currently supports AI Evidence BOM graphs only; it is not a CycloneDX JSF/JWS implementation. Envelope `createdAt` is informational and is not part of the signed canonical identity.
+
+See the [canonical-signing evidence record](docs/evidence/canonical-signing.md) for the pinned dependency, positive and negative controls, and validation boundary.
 
 ## Evidence levels
 

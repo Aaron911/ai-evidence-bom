@@ -38,7 +38,7 @@ Usage:
   aiebom diff    --before old.json --after new.json --output diff.json [--fail-on-change]
   aiebom policy  --input evidence.json --policy policy.json --output report.json
   aiebom keygen  --private-key private.pem --public-key public.pem
-  aiebom sign    --input evidence.json --private-key private.pem --output evidence.sig.json
+  aiebom sign    --input evidence.json --private-key private.pem --output evidence.sig.json [--canonical-evidence]
   aiebom verify  --input evidence.json --public-key public.pem --signature evidence.sig.json
 
 Inputs to scan may be compact observation JSON or OTLP JSON with resourceSpans.
@@ -411,6 +411,7 @@ func runSign(args []string) error {
 	inputPath := flags.String("input", "", "file to sign")
 	privatePath := flags.String("private-key", "", "private key PEM")
 	outputPath := flags.String("output", "", "signature envelope JSON")
+	canonicalEvidence := flags.Bool("canonical-evidence", false, "sign the canonical evidence-graph identity instead of exact file bytes")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -425,7 +426,12 @@ func runSign(args []string) error {
 	if err != nil {
 		return fmt.Errorf("read private key: %w", err)
 	}
-	envelope, err := signing.Sign(payload, privatePEM, time.Now().UTC())
+	var envelope signing.Envelope
+	if *canonicalEvidence {
+		envelope, err = signing.SignCanonicalEvidence(payload, privatePEM, time.Now().UTC())
+	} else {
+		envelope, err = signing.Sign(payload, privatePEM, time.Now().UTC())
+	}
 	if err != nil {
 		return err
 	}

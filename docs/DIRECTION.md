@@ -223,6 +223,45 @@ Continue monitoring OpenTelemetry issue `#437`; actionable maintainer feedback p
 
 The test fails if reproducibility requires removing meaningful evidence timestamps, if map ordering or JSON formatting changes the signed identity, or if verification cannot clearly distinguish canonical content from transport serialization. A failure should narrow the signing claim before adding retention or attestation features.
 
+## v0.8 canonical evidence-signing calibration — 2026-08-07
+
+This is an unreleased evidence-quality iteration, not a product or evidence-graph schema version bump.
+
+### Uncertainty tested
+
+Can one fixed evidence graph produce byte-identical canonical identity bytes and a stable Ed25519 signature across harmless JSON and graph-order changes, while any retained evidence-field change necessarily changes the canonical digest?
+
+### Evidence gained
+
+- The new canonical profile strictly decodes the project evidence graph, rejects duplicate or unknown JSON members, applies the graph's set/order semantics, normalizes timestamps to UTC, and then uses RFC 8785 JCS for the final cryptographic representation.
+- Two equivalent fixtures with different whitespace, object-member order, node order, repeated/set-like values, and UTC-offset spellings produce byte-identical canonical data, the same SHA-256 digest, and the same Ed25519 signature under one key.
+- Verification succeeds against an equivalently reformatted transport document but fails with `payload digest mismatch` after a one-field `observationCount` change.
+- Signature envelope v0.2 declares both the evidence payload type and canonicalization profile. Its signature input is domain-separated from legacy v0.1 raw-byte signing; legacy envelopes remain valid and formatting-sensitive.
+- Meaningful graph timestamps are retained and signed. No prompt, response, tool argument, result, or other new content is collected by this feature.
+- The RFC 8785 reference Go implementation is pinned to upstream commit `19d51d7fe467d4706a3ff08adf8a748f29fc21e0` and attributed under Apache-2.0.
+- Race-enabled tests and `go vet` passed in a disposable copy on the locally available Go 1.26.2 toolchain. A real CLI scan/keygen/sign/reformat/verify run produced the same canonical digest and signature and rejected a changed `observationCount`; the CycloneDX positive/negative schema gate also remained green.
+- Local `govulncheck` correctly rejected Go 1.26.2 for seven reachable standard-library findings fixed by Go 1.26.5. The repository minimum was not lowered; the required-version GitHub run remains the authoritative vulnerability gate.
+
+### Decision
+
+**Continue the evidence-quality direction.** The Phase 2 reproducible-snapshot item is complete for AI Evidence BOM graphs. The result is deliberately narrower than arbitrary JSON or CycloneDX signing and does not claim a trusted signing time, transparency log, confidentiality, or independent model-artifact verification.
+
+The canonical profile is opt-in so existing exact-byte signatures and BOM workflows do not change semantics. Verification follows explicit envelope metadata rather than attempting to infer whether a file should be canonicalized.
+
+### Risks and pivot signals
+
+- Canonical identity is versioned against the current evidence-graph contract. A future graph field or changed set/order semantic requires a reviewed profile version rather than silently changing `aiebom-evidence-v1+jcs-rfc8785`.
+- The stable signature claim applies to one fixed graph and key. A new collection timestamp or any retained evidence change is intentionally a new identity.
+- Envelope `createdAt` remains informational and unsigned. If operators need proof of signing time, validate a trusted timestamp or transparency-log integration instead of overstating this envelope.
+- CycloneDX provides its own JSF/JWS signature mechanisms. If BOM-native interoperability becomes a validated user need, implement and test that standard separately rather than relabeling the graph profile.
+- The canonicalizer is a pinned pseudoversion of the RFC-listed Go implementation. Dependency staleness, an upstream security issue, or cross-language fixture disagreement should fail the gate and trigger replacement or vendored review, not a fallback to ad hoc serialization.
+
+### Next smallest falsifiable test
+
+Continue monitoring OpenTelemetry issue `#437`; actionable maintainer feedback still preempts speculative MCP aliases. If no feedback exists, construct a conflicting-evidence fixture for one stable model identity and test explicit source precedence: a weaker or merely newer declaration must not overwrite independently verified identity data, and the conflict must remain visible rather than being silently resolved.
+
+The test fails if precedence is determined only by arrival time, if telemetry can self-promote to verified, or if exposing the conflict requires retaining model inputs, outputs, or credentials.
+
 ## Release calibration template
 
 For each later release, append a dated section containing:

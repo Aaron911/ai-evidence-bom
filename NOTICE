@@ -1,5 +1,9 @@
 AI Evidence BOM
 Copyright 2026 Aaron911 and contributors
 
-This product includes no bundled third-party runtime dependencies in v0.1.
+This product uses third-party open source modules declared in go.mod.
 
+The RFC 8785 JSON canonicalization implementation is derived from:
+https://github.com/cyberphone/json-canonicalization
+Copyright 2018 Anders Rundgren
+Licensed under the Apache License, Version 2.0.

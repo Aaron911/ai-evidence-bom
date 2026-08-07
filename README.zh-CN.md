@@ -20,7 +20,7 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 - 导出 CycloneDX 1.7，并在 CI 中使用校验和固定的官方 Schema 验证；
 - 检测模型、工具、MCP、数据源和权限变化；
 - 使用节点策略和有向图路径策略作为 CI 门禁；
-- 使用 Ed25519 签名并验证证据文件；
+- 使用 Ed25519 签名并验证精确文件字节，或签名采用 RFC 8785 规范化的证据图身份；
 - 默认只处理元数据，不保存 Prompt、响应、工具参数或工具结果。
 - 对在线请求限制大小，支持 gzip、可选 Bearer Token，并去除近期重复 span。
 
@@ -59,6 +59,31 @@ go build -o ./bin/aiebom ./cmd/aiebom
 ```
 
 示例策略会故意拒绝新出现的 `shell.execute` 能力，并以状态码 3 退出。
+
+## 可复现的证据签名
+
+对证据图推荐使用规范签名模式：
+
+```bash
+./bin/aiebom keygen \
+  --private-key work/evidence-private.pem \
+  --public-key work/evidence-public.pem
+
+./bin/aiebom sign \
+  --input work/after.evidence.json \
+  --private-key work/evidence-private.pem \
+  --canonical-evidence \
+  --output work/after.evidence.sig.json
+
+./bin/aiebom verify \
+  --input work/after.evidence.json \
+  --public-key work/evidence-public.pem \
+  --signature work/after.evidence.sig.json
+```
+
+该模式会严格解析证据图、拒绝重复或未知 JSON 字段、规范集合顺序和时区，再使用 [RFC 8785 JCS](https://www.rfc-editor.org/rfc/rfc8785.html) 生成签名身份。因此，缩进、对象字段顺序、节点/边顺序等传输格式变化不会改变摘要；任一被保留的证据字段变化都会导致验证失败。信封明确记录规范化模式，验证时不进行猜测。
+
+不加 `--canonical-evidence` 时仍使用兼容旧版本的“精确字节签名”，可签名 BOM 或其他文件，但重新格式化会使签名失效。当前规范模式只支持本项目证据图，并不是 CycloneDX JSF/JWS 实现；信封中的 `createdAt` 只是未被签名的说明性元数据。
 
 ## 在线采集
 
