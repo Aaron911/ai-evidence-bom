@@ -15,7 +15,7 @@
 4. Policy authors are trusted to define organizational intent.
 5. Hosted model providers remain outside the verifier's control.
 
-## Addressed through v0.7
+## Addressed through v0.8
 
 - Evidence provenance is explicit rather than collapsing declarations and observations.
 - Prompt and tool content is not retained.
@@ -35,16 +35,20 @@
 - Directed path policies detect reachability such as an observed Agent connection to a server that declares a denied tool, without falsely claiming the tool was invoked.
 - MCP descriptions, schema bodies, arguments, and results are discarded; only bounded identity metadata, annotation hints, and an input-schema digest survive.
 - The OTLP evidence-level extension can only downgrade evidence and cannot self-promote a span to verified.
+- Signature-looking OTLP attributes cannot promote model evidence to verified; verification must occur in a separately trusted adapter.
+- Versions, digests, and retained properties keep field-specific candidate evidence. Stronger evidence wins before recency, competing values remain visible, and policy can reject conflicts.
+- Merge selection is independent of arrival order, including a deterministic lexical tie-breaker when strength and time are equal.
+- Legacy graphs without field provenance are migrated as inferred field candidates instead of inheriting a potentially misleading strong node summary.
 
 ## Known limitations
 
 - An observed trace proves only that an instrumented component reported an event; it does not prove the event is truthful.
-- `verified` currently trusts an upstream `*.signature.verified=true` assertion. Independent OpenSSF Model Signing verification is planned.
+- `verified` compact observations still depend on the caller selecting and trusting an external verifier adapter. Independent built-in OpenSSF Model Signing verification is planned.
 - `scan` input files are loaded into memory and do not yet have a configurable size limit; live collection is bounded.
 - The built-in HTTP and gRPC servers do not terminate TLS. Remote use requires a trusted TLS proxy and access controls.
 - Retry deduplication is bounded and in-memory, so its history resets on restart and very old duplicates may be counted again.
 - A sampled-out or missing parent can leave child metadata pending until queue pressure; monitor `pendingSpans`. Pending context is not persisted across restarts.
-- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.7 protocol scope.
+- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.8 protocol scope.
 - There is no sandbox around input parsing.
 - Hosted model aliases and weights cannot be independently verified.
 - Exact-byte signing remains the default and is formatting-sensitive. Canonical signing is opt-in and currently accepts AI Evidence BOM graph JSON only; it does not implement CycloneDX JSF/JWS or canonicalize arbitrary files.
@@ -54,5 +58,7 @@
 - Current OpenTelemetry MCP conventions do not define stable logical server identity. The `aiebom.mcp.server.*` bridge is an explicit project extension derived from protocol discovery, not a standard attribute.
 - The official Go MCP SDK does not emit OTel automatically. v0.7 validates application instrumentation around real SDK calls, not universal zero-code capture or server-side trace-context propagation.
 - Path policy matches exact directed relation sequences and does not yet support counts, time windows, negative reachability, or aggregate behavior.
+- A selected field value is the strongest-supported candidate, not necessarily the most recently deployed value. Consumers must inspect `conflict` or enable `forbidFieldConflicts` when ambiguity is unacceptable.
+- Distinct field candidates and `observedVersions` are not yet cardinality-bounded. A malicious high-cardinality producer can grow a long-lived graph even though request sizes and trace-ID retention are bounded.
 
 Security issues should follow [SECURITY.md](../SECURITY.md), not a public issue containing sensitive reproduction material.

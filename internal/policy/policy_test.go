@@ -33,6 +33,20 @@ func TestEvaluateRejectsInvalidEvidenceLevel(t *testing.T) {
 	}
 }
 
+func TestEvaluateCanRejectFieldEvidenceConflicts(t *testing.T) {
+	node := model.Node{ID: "model:1", Type: "model", Name: "stable-alias"}
+	node.AddFieldEvidence(model.FieldVersion, "", "v1", model.EvidenceSummary{Level: model.EvidenceVerified, ObservationCount: 1})
+	node.AddFieldEvidence(model.FieldVersion, "", "v2", model.EvidenceSummary{Level: model.EvidenceDeclared, ObservationCount: 1})
+	node.ResolveFieldEvidence()
+	report, err := Evaluate(model.Graph{Nodes: []model.Node{node}}, Policy{ForbidFieldConflicts: true}, time.Unix(1, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Passed || len(report.Violations) != 1 || report.Violations[0].Rule != "forbid-field-conflict" {
+		t.Fatalf("unexpected report: %#v", report)
+	}
+}
+
 func TestEvaluateRejectsDeniedMCPReachabilityPath(t *testing.T) {
 	graph := model.Graph{Nodes: []model.Node{
 		{ID: "agent:1", Type: "agent", Name: "security-agent", Evidence: model.EvidenceSummary{Level: model.EvidenceObserved}},

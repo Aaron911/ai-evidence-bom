@@ -6,7 +6,7 @@ It answers a narrower question than an ordinary scanner:
 
 > What models, agents, tools, MCP servers, prompts, and data sources were actually observed at runtime, and how did that set change?
 
-The project is an experimental v0.7 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
+The project is an experimental v0.8 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
 
 ## Current capabilities
 
@@ -17,9 +17,11 @@ The project is an experimental v0.7 validation build. It is not a compliance cer
 - Includes source-derived contracts plus executable compatibility checks for Dify and Microsoft Agent Framework.
 - Uses MCP protocol discovery and runtime telemetry together to distinguish declared server capabilities from observed tool calls.
 - Records evidence as `inferred`, `declared`, `observed`, or `verified`.
+- Retains field-level evidence for versions, digests, and properties, resolves them independently of arrival order, and exposes competing values as conflicts.
 - Exports CycloneDX 1.7 JSON with AI/ML component types and relationships, validated in CI against the checksum-pinned official schema.
 - Compares two evidence graphs to find new, removed, and changed capabilities.
 - Enforces node and directed graph-path JSON policies suitable for CI gates.
+- Can fail policy when conflicting field evidence exists, even when the strongest selected value did not change.
 - Signs exact graph/BOM bytes or RFC 8785-canonical evidence-graph identities with Ed25519 and detects tampering.
 - Defaults to metadata-only processing. Prompt bodies and tool arguments are never retained.
 - Bounds live request sizes, supports gzip, optionally authenticates with a bearer token, and deduplicates recent span retries.
@@ -130,9 +132,9 @@ Use the same protected key for later scans. The key is never written to the grap
   --signature work/after.evidence.sig.json
 ```
 
-`--canonical-evidence` is the recommended mode for evidence graphs. It strictly decodes the graph, rejects duplicate or unknown JSON members, normalizes the graph's set-like collections and timestamps, and then applies [RFC 8785 JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785.html). Equivalent whitespace, JSON object-member order, node/edge order, source order, and UTC-offset spelling therefore produce the same payload digest and deterministic Ed25519 signature for the same key. Any retained evidence-field change changes the digest and fails verification.
+`--canonical-evidence` is the recommended mode for evidence graphs. It strictly decodes the graph, rejects duplicate or unknown JSON members and inconsistent field-evidence selections, normalizes the graph's set-like collections and timestamps, and then applies [RFC 8785 JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785.html). Equivalent whitespace, JSON object-member order, node/edge order, source order, and UTC-offset spelling therefore produce the same payload digest and deterministic Ed25519 signature for the same key. Any retained evidence-field change changes the digest and fails verification.
 
-The signature envelope records `payloadType=aiebom-evidence-graph` and `canonicalization=aiebom-evidence-v1+jcs-rfc8785`; `verify` reads these fields and never guesses the mode. The default without `--canonical-evidence` remains the backward-compatible exact-byte mode, which can also sign CycloneDX or another file and is invalidated by reformatting. Canonical mode currently supports AI Evidence BOM graphs only; it is not a CycloneDX JSF/JWS implementation. Envelope `createdAt` is informational and is not part of the signed canonical identity.
+New signatures use envelope v0.3 with `payloadType=aiebom-evidence-graph` and `canonicalization=aiebom-evidence-v2+jcs-rfc8785`, which includes v0.8 field-evidence ordering and timestamp semantics. `verify` reads these fields and never guesses the mode; existing v0.2/v1 canonical envelopes and v0.1 exact-byte envelopes remain verifiable. The default without `--canonical-evidence` remains the exact-byte mode, which can also sign CycloneDX or another file and is invalidated by reformatting. Canonical mode currently supports AI Evidence BOM graphs only; it is not a CycloneDX JSF/JWS implementation. Envelope `createdAt` is informational and is not part of the signed canonical identity.
 
 See the [canonical-signing evidence record](docs/evidence/canonical-signing.md) for the pinned dependency, positive and negative controls, and validation boundary.
 
@@ -143,9 +145,13 @@ See the [canonical-signing evidence record](docs/evidence/canonical-signing.md) 
 | `inferred` | Derived by a heuristic and not directly asserted by the source. |
 | `declared` | Present in configuration or supplied metadata. |
 | `observed` | Seen in a runtime event or trace. |
-| `verified` | Backed by an independently verified digest or signature assertion. |
+| `verified` | Supplied by an explicitly trusted non-OTLP verifier adapter; built-in model-artifact verification is not implemented yet. |
 
 Higher evidence does not mean that a component is safe. It means only that its identity has stronger support.
+
+For mutable fields, the selected value is the candidate with the strongest evidence, then the latest observation time, then lexical order as a deterministic tie-breaker. All competing candidates remain in `fieldEvidence`, and `conflict=true` prevents a weaker but newer declaration from silently replacing stronger identity evidence. Ordinary OTLP attributes, including signature-looking assertions, cannot promote evidence to `verified`.
+
+The reproducible conflict fixture and its positive, negative, and migration controls are documented in the [v0.8 field-evidence record](docs/evidence/v0.8.0.md).
 
 ## Architecture
 
@@ -176,7 +182,8 @@ Policies are JSON:
   "requireProvidersFor": ["model", "tool"],
   "deniedNamePatterns": ["(?i)shell|execute"],
   "requireVersionsFor": ["model", "tool"],
-  "forbidInferred": true
+  "forbidInferred": true,
+  "forbidFieldConflicts": true
 }
 ```
 
@@ -214,7 +221,7 @@ See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for exact framework coverage 
 This project does not currently:
 
 - capture traffic from closed-source clients without instrumentation;
-- ingest OTLP metrics, logs, or profiles; v0.7 deliberately accepts traces only;
+- ingest OTLP metrics, logs, or profiles; v0.8 deliberately accepts traces only;
 - make the official MCP SDK emit OTLP automatically; the v0.7 live check installs application instrumentation around its real SDK calls;
 - trust MCP tool descriptions, schemas, or annotations as proof of safe behavior;
 - prove which weights a hosted model provider actually served;

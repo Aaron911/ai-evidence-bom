@@ -27,7 +27,9 @@ The compact format is useful for adapters that do not emit OTLP directly:
 
 Unknown attributes remain available to future adapters, but only an allowlisted subset is copied into graph properties.
 
-OTLP spans are `observed` by default. The project extension `aiebom.evidence.level` may downgrade an OTLP observation to `declared` or `inferred`; it cannot promote evidence to `verified`. v0.7 uses this only for content-free MCP capabilities returned by `tools/list`.
+OTLP spans are `observed` by default. The project extension `aiebom.evidence.level` may downgrade an OTLP observation to `declared` or `inferred`; it cannot promote evidence to `verified`. The MCP adapter uses this for content-free capabilities returned by `tools/list`.
+
+Signature-looking OTLP attributes such as `gen_ai.model.signature.verified=true` are untrusted metadata and do not change the evidence level. A compact-input adapter may emit `verified` only after performing verification outside the current normalizer; the built-in OpenSSF Model Signing verifier remains roadmap work.
 
 ## MCP identity and capability bridge
 
@@ -79,15 +81,67 @@ Each node and edge has an evidence summary:
 }
 ```
 
-At most 20 trace identifiers are retained per node or edge in v0.7. Observation counts continue increasing after that cap.
+At most 20 trace identifiers are retained per node, edge, or field-value candidate in v0.8. Observation counts continue increasing after that cap.
 
-Continuous collection merges snapshots by stable node and edge identity. It preserves the strongest evidence level, earliest and latest observation time, all observed versions, and cumulative observation counts. The latest timestamp wins when version or property values conflict.
+Continuous collection merges snapshots by stable node and edge identity. It preserves the strongest node evidence level, earliest and latest observation time, all observed versions, and cumulative observation counts.
+
+### Field evidence and conflicts
+
+Node-level evidence describes the node as a whole; it is not automatically proof for each mutable field. v0.8 therefore records candidates for `version`, each digest algorithm, and each retained property:
+
+```json
+{
+  "version": "weights-v1",
+  "observedVersions": ["weights-v1", "weights-v2"],
+  "fieldEvidence": [
+    {
+      "field": "version",
+      "selectedValue": "weights-v1",
+      "conflict": true,
+      "values": [
+        {
+          "value": "weights-v1",
+          "evidence": {
+            "level": "verified",
+            "sources": ["signature-verifier"],
+            "observationCount": 1
+          }
+        },
+        {
+          "value": "weights-v2",
+          "evidence": {
+            "level": "declared",
+            "sources": ["deployment-config"],
+            "observationCount": 1
+          }
+        }
+      ]
+    }
+  ],
+  "evidence": {
+    "level": "verified",
+    "observationCount": 2
+  }
+}
+```
+
+`field` is `version`, `digest`, or `property`. Digest and property entries also carry `key`; version does not. `selectedValue` is copied to the existing top-level `version`, `digests[key]`, or `properties[key]` field for compatibility with exporters and consumers.
+
+Selection is deterministic and independent of arrival order:
+
+1. stronger evidence level wins;
+2. at the same level, later `lastSeen` wins;
+3. an exact tie uses lexically smaller value as the stable tie-breaker.
+
+Distinct candidates remain in `values`, and `conflict` is true whenever more than one value exists. A stronger older value can therefore remain selected while a newer weaker claim is still visible to diff and policy. `forbidFieldConflicts` makes any such conflict a policy violation. CycloneDX export carries the selected and candidate values under `aibom:field-evidence:*` properties and emits `aibom:field-conflict` for each conflict.
+
+When a v0.7 graph without `fieldEvidence` is first merged, its existing mutable values become conservative `inferred` compatibility candidates. The node-level summary is not copied as field-level verification because old graphs cannot establish which observation supplied a field. New v0.8 observations rebuild field-specific strength.
 
 OTLP JSON and protobuf requests are converted to the same internal observation contract. Instrumentation scope name, version, and schema URL are retained on relevant nodes as provenance. Unknown OTLP fields are ignored, and arbitrary attributes are not copied into output properties.
 
 ## Directed path policy
 
-`deniedPaths` matches an exact directed relationship sequence. `from`, optional `via`, and `to` selectors support node type, provider, regular-expression name matching, and minimum evidence. Paths are bounded to eight relationships. A violation records the matched node IDs and relations; disconnected nodes do not match.
+`deniedPaths` matches an exact directed relationship sequence. `from`, optional `via`, and `to` selectors support node type, provider, regular-expression name matching, and minimum evidence. Paths are bounded to eight relationships. A violation records the matched node IDs and relations; disconnected nodes do not match. `forbidFieldConflicts` independently rejects nodes with competing version, digest, or property candidates.
 
 See [`examples/policy-mcp-capability.json`](../examples/policy-mcp-capability.json) for an Agent-to-MCP-to-tool capability rule.
 
@@ -101,4 +155,4 @@ See [`examples/policy-mcp-capability.json`](../examples/policy-mcp-capability.js
 | software | `library` |
 | agent, tool, MCP server | `application` |
 
-Evidence-specific fields are exported as namespaced CycloneDX properties beginning with `aibom:`.
+Evidence-specific fields are exported as namespaced CycloneDX properties beginning with `aibom:`. Field candidate properties contain only values already retained by the evidence graph; they do not add model input, output, prompt, credential, tool argument, or tool result content.

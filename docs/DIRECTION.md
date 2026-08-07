@@ -263,6 +263,47 @@ Continue monitoring OpenTelemetry issue `#437`; actionable maintainer feedback s
 
 The test fails if precedence is determined only by arrival time, if telemetry can self-promote to verified, or if exposing the conflict requires retaining model inputs, outputs, or credentials.
 
+## v0.8 field-evidence precedence calibration — 2026-08-07
+
+This iteration changes the experimental evidence-graph schema to `0.8.0`; it does not create a tag or release.
+
+### Uncertainty tested
+
+Can conflicting claims about one stable model identity be merged without arrival order deciding the result, without a weaker or newer declaration overwriting independently verified field evidence, and without hiding the disagreement?
+
+### Evidence gained
+
+- Versions, digest algorithms, and retained properties now carry value-specific evidence summaries instead of borrowing only the node's strongest aggregate level.
+- Selection is deterministic: evidence strength wins first, then latest observation time, then lexical order. Forward and reverse permutations of the same verified and declared model claims produce identical nodes.
+- A newer declared version, digest, and endpoint cannot replace older verified candidates. Both values remain in `fieldEvidence` with `conflict=true` and their original source, strength, count, and time window.
+- Graph diff reports changed field evidence, `forbidFieldConflicts` can reject the ambiguity, and CycloneDX preserves selected values, candidates, strengths, and conflict markers under the `aibom:` namespace.
+- Canonical signing moves new graphs to envelope v0.3/profile v2 so field candidate ordering and timestamps are part of an explicit domain-separated contract; existing v0.2/profile-v1 signatures remain verifiable and reject v0.8-only field evidence.
+- OTLP's downgrade-only evidence boundary now also ignores `gen_ai.model.signature.verified=true`; an untrusted span remains observed. No prompt, response, credential, tool argument, or tool result is needed to expose a conflict.
+- Legacy v0.7 graphs cannot prove which observation supplied a mutable field. Their existing values therefore migrate as inferred candidates instead of inheriting a potentially misleading verified node summary.
+- Race-enabled Go tests, `go vet`, build, and the CycloneDX 1.7 positive/negative schema gate passed in a disposable copy on the locally available Go 1.26.2 toolchain. A real CLI run selected the verified fixture values, produced three policy conflicts, and generated and verified a v0.3/profile-v2 canonical signature.
+- Local `govulncheck` found only the same seven reachable Go 1.26.2 standard-library issues, all fixed by the repository-required Go 1.26.5. The minimum remains unchanged, and the required-version GitHub run remains the authoritative vulnerability gate.
+- OpenTelemetry issue [`#437`](https://github.com/open-telemetry/semantic-conventions-genai/issues/437) remained open with no maintainer comments at the start of this iteration, so no standard acceptance or new MCP alias is inferred.
+
+### Decision
+
+**Continue the evidence-quality direction.** The previous arrival-time merge could combine a weak field value with a strong node-level label; v0.8 removes that misleading composition and turns ambiguity into auditable, enforceable evidence. This remains a BOM evidence problem, not a dashboard, generic vulnerability feed, or active model-safety verdict.
+
+The schema bump is justified because `fieldEvidence` is a new public graph contract. Existing top-level values remain for consumers and CycloneDX export, but their meaning is now explicitly “strongest-supported selected value,” not “last value received.”
+
+### Risks and pivot signals
+
+- A compact adapter can still label an observation verified. Until a source trust cap or built-in verifier exists, operators must restrict which adapter can supply that input.
+- The strongest-supported candidate is not necessarily the currently deployed candidate. Security gates that require certainty should enable `forbidFieldConflicts` rather than looking only at the top-level value.
+- Legacy migration deliberately loses unsupported field-level confidence. If operators require historical confidence, they must retain original signed evidence or re-run a trusted verifier; the project must not reconstruct proof that was never recorded.
+- Candidate values increase retained metadata and are not yet cardinality-bounded. If a high-cardinality producer can grow a long-lived graph materially, bound the representation without making merge results depend on arrival order.
+- If real operators prefer explicit unresolved fields over a selected strongest value, add a separate resolution status rather than silently changing precedence.
+
+### Next smallest falsifiable test
+
+Continue monitoring OpenTelemetry issue `#437`; actionable maintainer feedback still preempts speculative MCP work. If no feedback exists, add operator-defined source trust caps and test a malicious compact adapter that labels deployment metadata `verified`: the claim must be downgraded or rejected unless that exact source is authorized for verified evidence, while a trusted verifier source remains accepted.
+
+The test fails if trust depends only on a self-reported evidence level, if source rules change results by arrival order, or if configuration requires framework-specific code. A failure should narrow the meaning of `verified` before integrating more attestation formats.
+
 ## Release calibration template
 
 For each later release, append a dated section containing:

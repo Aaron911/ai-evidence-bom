@@ -1,5 +1,7 @@
 # Canonical evidence-signing validation
 
+> This record validates the original envelope v0.2/profile-v1 contract for schema v0.7. Schema v0.8 adds field-evidence semantics and new signatures therefore use domain-separated envelope v0.3/profile v2; verification of v0.2/profile-v1 evidence remains supported.
+
 Date: 2026-08-07
 
 This record tests a narrow Phase 2 claim: one fixed AI Evidence BOM graph can retain a stable cryptographic identity across harmless transport formatting and graph collection order, while a retained evidence change cannot verify under the old identity. It does not claim canonical signing for arbitrary JSON or CycloneDX, trusted signing time, confidentiality, or independent verification of a model artifact.

@@ -29,12 +29,17 @@ func Merge(current, incoming model.Graph, generatedAt time.Time) model.Graph {
 
 	nodes := make(map[string]int, len(result.Nodes))
 	for index := range result.Nodes {
+		result.Nodes[index].EnsureFieldEvidence()
+		result.Nodes[index].ResolveFieldEvidence()
 		nodes[result.Nodes[index].ID] = index
 	}
 	for _, candidate := range incoming.Nodes {
+		candidate = cloneNode(candidate)
+		candidate.EnsureFieldEvidence()
+		candidate.ResolveFieldEvidence()
 		index, exists := nodes[candidate.ID]
 		if !exists {
-			result.Nodes = append(result.Nodes, cloneNode(candidate))
+			result.Nodes = append(result.Nodes, candidate)
 			nodes[candidate.ID] = len(result.Nodes) - 1
 			continue
 		}
@@ -58,6 +63,12 @@ func Merge(current, incoming model.Graph, generatedAt time.Time) model.Graph {
 	result.Canonicalize()
 	for index := range result.Nodes {
 		result.Nodes[index].Evidence.TraceIDs = limited(result.Nodes[index].Evidence.TraceIDs, maxTraceIDs)
+		for fieldIndex := range result.Nodes[index].FieldEvidence {
+			for valueIndex := range result.Nodes[index].FieldEvidence[fieldIndex].Values {
+				evidence := &result.Nodes[index].FieldEvidence[fieldIndex].Values[valueIndex].Evidence
+				evidence.TraceIDs = limited(evidence.TraceIDs, maxTraceIDs)
+			}
+		}
 	}
 	for index := range result.Edges {
 		result.Edges[index].Evidence.TraceIDs = limited(result.Edges[index].Evidence.TraceIDs, maxTraceIDs)
@@ -66,14 +77,10 @@ func Merge(current, incoming model.Graph, generatedAt time.Time) model.Graph {
 }
 
 func mergeNode(current *model.Node, incoming model.Node) {
-	currentLastSeen := current.Evidence.LastSeen
-	newer := currentLastSeen.IsZero() || !incoming.Evidence.LastSeen.Before(currentLastSeen)
-	if newer {
-		if incoming.Version != "" {
-			current.Version = incoming.Version
+	for _, claim := range incoming.FieldEvidence {
+		for _, value := range claim.Values {
+			current.AddFieldEvidence(claim.Field, claim.Key, value.Value, value.Evidence)
 		}
-		mergeMap(current.Digests, incoming.Digests)
-		mergeMap(current.Properties, incoming.Properties)
 	}
 	if current.Type == "" {
 		current.Type = incoming.Type
@@ -89,19 +96,11 @@ func mergeNode(current *model.Node, incoming model.Node) {
 		current.ObservedVersions = append(current.ObservedVersions, incoming.Version)
 	}
 	mergeEvidence(&current.Evidence, incoming.Evidence)
+	current.ResolveFieldEvidence()
 }
 
 func mergeEvidence(current *model.EvidenceSummary, incoming model.EvidenceSummary) {
-	current.Level = model.StrongerLevel(current.Level, incoming.Level)
-	current.ObservationCount += incoming.ObservationCount
-	current.Sources = append(current.Sources, incoming.Sources...)
-	current.TraceIDs = append(current.TraceIDs, incoming.TraceIDs...)
-	if current.FirstSeen.IsZero() || (!incoming.FirstSeen.IsZero() && incoming.FirstSeen.Before(current.FirstSeen)) {
-		current.FirstSeen = incoming.FirstSeen
-	}
-	if incoming.LastSeen.After(current.LastSeen) {
-		current.LastSeen = incoming.LastSeen
-	}
+	model.MergeEvidenceSummary(current, incoming)
 }
 
 func cloneGraph(graph model.Graph) model.Graph {
@@ -123,6 +122,15 @@ func cloneNode(node model.Node) model.Node {
 	result.ObservedVersions = append([]string(nil), node.ObservedVersions...)
 	result.Digests = cloneMap(node.Digests)
 	result.Properties = cloneMap(node.Properties)
+	result.FieldEvidence = make([]model.FieldEvidence, len(node.FieldEvidence))
+	for fieldIndex, claim := range node.FieldEvidence {
+		result.FieldEvidence[fieldIndex] = claim
+		result.FieldEvidence[fieldIndex].Values = make([]model.FieldValueEvidence, len(claim.Values))
+		for valueIndex, value := range claim.Values {
+			result.FieldEvidence[fieldIndex].Values[valueIndex] = value
+			result.FieldEvidence[fieldIndex].Values[valueIndex].Evidence = cloneEvidence(value.Evidence)
+		}
+	}
 	result.Evidence = cloneEvidence(node.Evidence)
 	return result
 }
@@ -149,12 +157,6 @@ func cloneMap(source map[string]string) map[string]string {
 		result[key] = value
 	}
 	return result
-}
-
-func mergeMap(destination, source map[string]string) {
-	for key, value := range source {
-		destination[key] = value
-	}
 }
 
 func limited(values []string, limit int) []string {

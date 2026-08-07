@@ -11,14 +11,15 @@ import (
 )
 
 type Policy struct {
-	Version             string                         `json:"version"`
-	MinimumEvidence     map[string]model.EvidenceLevel `json:"minimumEvidence,omitempty"`
-	AllowedProviders    []string                       `json:"allowedProviders,omitempty"`
-	RequireProvidersFor []string                       `json:"requireProvidersFor,omitempty"`
-	DeniedNamePatterns  []string                       `json:"deniedNamePatterns,omitempty"`
-	RequireVersionsFor  []string                       `json:"requireVersionsFor,omitempty"`
-	ForbidInferred      bool                           `json:"forbidInferred,omitempty"`
-	DeniedPaths         []PathRule                     `json:"deniedPaths,omitempty"`
+	Version              string                         `json:"version"`
+	MinimumEvidence      map[string]model.EvidenceLevel `json:"minimumEvidence,omitempty"`
+	AllowedProviders     []string                       `json:"allowedProviders,omitempty"`
+	RequireProvidersFor  []string                       `json:"requireProvidersFor,omitempty"`
+	DeniedNamePatterns   []string                       `json:"deniedNamePatterns,omitempty"`
+	RequireVersionsFor   []string                       `json:"requireVersionsFor,omitempty"`
+	ForbidInferred       bool                           `json:"forbidInferred,omitempty"`
+	ForbidFieldConflicts bool                           `json:"forbidFieldConflicts,omitempty"`
+	DeniedPaths          []PathRule                     `json:"deniedPaths,omitempty"`
 }
 
 // PathRule denies a directed graph path with an exact relationship sequence.
@@ -102,6 +103,17 @@ func Evaluate(graph model.Graph, policy Policy, generatedAt time.Time) (Report, 
 		}
 		if _, ok := requiredVersions[strings.ToLower(node.Type)]; ok && strings.TrimSpace(node.Version) == "" && len(node.ObservedVersions) == 0 {
 			report.add(node, "require-version", "component version is required")
+		}
+		if policy.ForbidFieldConflicts {
+			for _, claim := range node.FieldEvidence {
+				if claim.Conflict || len(claim.Values) > 1 {
+					field := claim.Field
+					if claim.Key != "" {
+						field += ":" + claim.Key
+					}
+					report.add(node, "forbid-field-conflict", fmt.Sprintf("field %q has %d competing values", field, len(claim.Values)))
+				}
+			}
 		}
 		for index, pattern := range patterns {
 			if pattern.MatchString(node.Name) {

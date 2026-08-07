@@ -1,6 +1,7 @@
 package normalize
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -320,6 +321,63 @@ func TestBuildMergesDeclaredMCPDiscoveryWithObservedToolCall(t *testing.T) {
 		if node.Type == "agent" && node.ID != agentID {
 			t.Fatalf("MCP discovery invented a service fallback agent: %+v", node)
 		}
+	}
+}
+
+func TestBuildFieldSelectionIsIndependentOfObservationOrder(t *testing.T) {
+	verifiedAt := time.Date(2026, 8, 7, 8, 0, 0, 0, time.UTC)
+	declaredAt := verifiedAt.Add(time.Hour)
+	verified := inputpkg.Observation{
+		Timestamp: verifiedAt, Level: model.EvidenceVerified, Source: "signature-verifier",
+		Attributes: map[string]string{
+			"gen_ai.provider.name":  "provider",
+			"gen_ai.request.model":  "stable-alias",
+			"gen_ai.response.model": "weights-v1",
+			"gen_ai.model.digest":   "verified-digest",
+			"server.address":        "verified.example",
+		},
+	}
+	declared := inputpkg.Observation{
+		Timestamp: declaredAt, Level: model.EvidenceDeclared, Source: "deployment-config",
+		Attributes: map[string]string{
+			"gen_ai.provider.name":  "provider",
+			"gen_ai.request.model":  "stable-alias",
+			"gen_ai.response.model": "weights-v2",
+			"gen_ai.model.digest":   "declared-digest",
+			"server.address":        "declared.example",
+		},
+	}
+
+	forward := Build([]inputpkg.Observation{verified, declared}, "test", declaredAt)
+	reverse := Build([]inputpkg.Observation{declared, verified}, "test", declaredAt)
+	if !reflect.DeepEqual(forward.Nodes, reverse.Nodes) {
+		t.Fatalf("observation order changed nodes:\nforward=%+v\nreverse=%+v", forward.Nodes, reverse.Nodes)
+	}
+	node := forward.Nodes[0]
+	if node.Version != "weights-v1" || node.Digests["sha256"] != "verified-digest" || node.Properties["server.address"] != "verified.example" {
+		t.Fatalf("weaker newer fields were selected: %+v", node)
+	}
+	if len(node.FieldEvidence) != 3 {
+		t.Fatalf("field evidence=%d want=3: %+v", len(node.FieldEvidence), node.FieldEvidence)
+	}
+	for _, claim := range node.FieldEvidence {
+		if !claim.Conflict || len(claim.Values) != 2 {
+			t.Fatalf("field conflict not retained: %+v", claim)
+		}
+	}
+}
+
+func TestBuildDoesNotTrustTelemetrySignatureAssertion(t *testing.T) {
+	timestamp := time.Date(2026, 8, 7, 8, 0, 0, 0, time.UTC)
+	graph := Build([]inputpkg.Observation{{
+		Timestamp: timestamp, Level: model.EvidenceObserved, Source: "untrusted-otlp",
+		Attributes: map[string]string{
+			"gen_ai.request.model":            "model-a",
+			"gen_ai.model.signature.verified": "true",
+		},
+	}}, "test", timestamp)
+	if len(graph.Nodes) != 1 || graph.Nodes[0].Evidence.Level != model.EvidenceObserved {
+		t.Fatalf("telemetry assertion promoted evidence: %+v", graph.Nodes)
 	}
 }
 

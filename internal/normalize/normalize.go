@@ -53,6 +53,16 @@ func BuildWithOptions(observations []inputpkg.Observation, source string, genera
 		graph.Edges = append(graph.Edges, *edge)
 	}
 	graph.Canonicalize()
+	for nodeIndex := range graph.Nodes {
+		for fieldIndex := range graph.Nodes[nodeIndex].FieldEvidence {
+			for valueIndex := range graph.Nodes[nodeIndex].FieldEvidence[fieldIndex].Values {
+				traceIDs := graph.Nodes[nodeIndex].FieldEvidence[fieldIndex].Values[valueIndex].Evidence.TraceIDs
+				if len(traceIDs) > 20 {
+					graph.Nodes[nodeIndex].FieldEvidence[fieldIndex].Values[valueIndex].Evidence.TraceIDs = traceIDs[:20]
+				}
+			}
+		}
+	}
 	return graph
 }
 
@@ -112,12 +122,6 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 		if responseModel != "" && responseModel != modelName {
 			version = responseModel
 		}
-		level := observation.Level
-		if strings.EqualFold(first(attrs, "gen_ai.model.signature.verified", "model.signature.verified"), "true") {
-			level = model.EvidenceVerified
-		}
-		modelObservation := observation
-		modelObservation.Level = level
 		digests := make(map[string]string)
 		if digest := first(attrs, "gen_ai.model.digest", "model.digest"); digest != "" {
 			digests["sha256"] = strings.TrimPrefix(digest, "sha256:")
@@ -138,7 +142,7 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 				"otel.scope.version",
 				"otel.scope.schema_url",
 			),
-		}, modelObservation)
+		}, observation)
 		if agent != nil {
 			b.addEdge(agent.ID, modelNode.ID, "uses", observation)
 		}
@@ -288,26 +292,25 @@ func (b *Builder) addNode(value nodeInput, observation inputpkg.Observation) *mo
 			ID:         id,
 			Type:       value.Type,
 			Name:       value.Name,
-			Version:    value.Version,
 			Provider:   value.Provider,
-			Digests:    clone(value.Digests),
-			Properties: clone(value.Properties),
-		}
-		if node.Digests == nil {
-			node.Digests = make(map[string]string)
-		}
-		if node.Properties == nil {
-			node.Properties = make(map[string]string)
+			Digests:    make(map[string]string),
+			Properties: make(map[string]string),
 		}
 		b.nodes[id] = node
 	}
+	claimEvidence := observationEvidence(observation)
 	if value.Version != "" {
-		node.Version = value.Version
 		node.ObservedVersions = append(node.ObservedVersions, value.Version)
+		node.AddFieldEvidence(model.FieldVersion, "", value.Version, claimEvidence)
 	}
-	mergeMap(node.Digests, value.Digests)
-	mergeMap(node.Properties, value.Properties)
+	for key, candidate := range value.Digests {
+		node.AddFieldEvidence(model.FieldDigest, key, candidate, claimEvidence)
+	}
+	for key, candidate := range value.Properties {
+		node.AddFieldEvidence(model.FieldProperty, key, candidate, claimEvidence)
+	}
 	mergeEvidence(&node.Evidence, observation)
+	node.ResolveFieldEvidence()
 	return node
 }
 
@@ -322,18 +325,26 @@ func (b *Builder) addEdge(from, to, relation string, observation inputpkg.Observ
 }
 
 func mergeEvidence(summary *model.EvidenceSummary, observation inputpkg.Observation) {
-	summary.Level = model.StrongerLevel(summary.Level, observation.Level)
-	summary.ObservationCount++
-	summary.Sources = append(summary.Sources, observation.Source)
-	if observation.TraceID != "" && len(summary.TraceIDs) < 20 {
-		summary.TraceIDs = append(summary.TraceIDs, observation.TraceID)
+	model.MergeEvidenceSummary(summary, observationEvidence(observation))
+	if len(summary.TraceIDs) > 20 {
+		summary.TraceIDs = summary.TraceIDs[:20]
 	}
-	if summary.FirstSeen.IsZero() || observation.Timestamp.Before(summary.FirstSeen) {
-		summary.FirstSeen = observation.Timestamp
+}
+
+func observationEvidence(observation inputpkg.Observation) model.EvidenceSummary {
+	summary := model.EvidenceSummary{
+		Level:            observation.Level,
+		ObservationCount: 1,
+		FirstSeen:        observation.Timestamp,
+		LastSeen:         observation.Timestamp,
 	}
-	if summary.LastSeen.IsZero() || observation.Timestamp.After(summary.LastSeen) {
-		summary.LastSeen = observation.Timestamp
+	if observation.Source != "" {
+		summary.Sources = []string{observation.Source}
 	}
+	if observation.TraceID != "" {
+		summary.TraceIDs = []string{observation.TraceID}
+	}
+	return summary
 }
 
 func hasGenAIAttributes(attrs map[string]string) bool {
@@ -382,12 +393,6 @@ func clone(source map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
-}
-
-func mergeMap(destination, source map[string]string) {
-	for key, value := range source {
-		destination[key] = value
-	}
 }
 
 func truth(value bool) string {

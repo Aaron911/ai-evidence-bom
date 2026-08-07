@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -21,10 +22,13 @@ import (
 
 const (
 	rawEnvelopeVersion         = "0.1.0"
-	canonicalEnvelopeVersion   = "0.2.0"
+	canonicalEnvelopeVersionV1 = "0.2.0"
+	canonicalEnvelopeVersionV2 = "0.3.0"
 	CanonicalPayloadType       = "aiebom-evidence-graph"
 	CanonicalizationEvidenceV1 = "aiebom-evidence-v1+jcs-rfc8785"
-	canonicalSignatureDomain   = "AI Evidence BOM canonical signature\x00v0.2.0\x00aiebom-evidence-graph\x00aiebom-evidence-v1+jcs-rfc8785\x00"
+	CanonicalizationEvidenceV2 = "aiebom-evidence-v2+jcs-rfc8785"
+	canonicalSignatureDomainV1 = "AI Evidence BOM canonical signature\x00v0.2.0\x00aiebom-evidence-graph\x00aiebom-evidence-v1+jcs-rfc8785\x00"
+	canonicalSignatureDomainV2 = "AI Evidence BOM canonical signature\x00v0.3.0\x00aiebom-evidence-graph\x00aiebom-evidence-v2+jcs-rfc8785\x00"
 )
 
 type Envelope struct {
@@ -68,10 +72,10 @@ func SignCanonicalEvidence(payload, privatePEM []byte, createdAt time.Time) (Env
 	if err != nil {
 		return Envelope{}, err
 	}
-	return sign(canonical, canonicalSignatureMessage(canonical), privatePEM, createdAt, Envelope{
-		Version:          canonicalEnvelopeVersion,
+	return sign(canonical, canonicalSignatureMessageV2(canonical), privatePEM, createdAt, Envelope{
+		Version:          canonicalEnvelopeVersionV2,
 		PayloadType:      CanonicalPayloadType,
-		Canonicalization: CanonicalizationEvidenceV1,
+		Canonicalization: CanonicalizationEvidenceV2,
 	})
 }
 
@@ -128,28 +132,44 @@ func verificationPayload(payload []byte, envelope Envelope) ([]byte, []byte, err
 			return nil, nil, fmt.Errorf("raw signature envelope must not declare canonical payload metadata")
 		}
 		return payload, payload, nil
-	case canonicalEnvelopeVersion:
+	case canonicalEnvelopeVersionV1:
 		if envelope.PayloadType != CanonicalPayloadType {
 			return nil, nil, fmt.Errorf("unsupported canonical payload type %q", envelope.PayloadType)
 		}
 		if envelope.Canonicalization != CanonicalizationEvidenceV1 {
 			return nil, nil, fmt.Errorf("unsupported canonicalization %q", envelope.Canonicalization)
 		}
+		canonical, err := canonicalizeEvidence(payload, false)
+		if err != nil {
+			return nil, nil, err
+		}
+		return canonical, canonicalSignatureMessageV1(canonical), nil
+	case canonicalEnvelopeVersionV2:
+		if envelope.PayloadType != CanonicalPayloadType {
+			return nil, nil, fmt.Errorf("unsupported canonical payload type %q", envelope.PayloadType)
+		}
+		if envelope.Canonicalization != CanonicalizationEvidenceV2 {
+			return nil, nil, fmt.Errorf("unsupported canonicalization %q", envelope.Canonicalization)
+		}
 		canonical, err := CanonicalizeEvidence(payload)
 		if err != nil {
 			return nil, nil, err
 		}
-		return canonical, canonicalSignatureMessage(canonical), nil
+		return canonical, canonicalSignatureMessageV2(canonical), nil
 	default:
 		return nil, nil, fmt.Errorf("unsupported signature envelope version %q", envelope.Version)
 	}
 }
 
-// CanonicalizeEvidence returns the canonical bytes used by the v1 evidence
+// CanonicalizeEvidence returns the canonical bytes used by the v2 evidence
 // signing profile. It first validates the input as strict RFC 8785-compatible
 // JSON, then applies the graph's set/order semantics, normalizes timestamps to
 // UTC, and finally serializes with RFC 8785 JCS.
 func CanonicalizeEvidence(payload []byte) ([]byte, error) {
+	return canonicalizeEvidence(payload, true)
+}
+
+func canonicalizeEvidence(payload []byte, allowFieldEvidence bool) ([]byte, error) {
 	if !utf8.Valid(payload) {
 		return nil, fmt.Errorf("canonicalize evidence: input is not valid UTF-8")
 	}
@@ -168,6 +188,13 @@ func CanonicalizeEvidence(payload []byte) ([]byte, error) {
 	}
 	if err := validateGraphIdentity(graph); err != nil {
 		return nil, err
+	}
+	if !allowFieldEvidence {
+		for _, node := range graph.Nodes {
+			if len(node.FieldEvidence) > 0 {
+				return nil, fmt.Errorf("canonicalize evidence: v1 profile does not support fieldEvidence")
+			}
+		}
 	}
 
 	graph.Canonicalize()
@@ -193,6 +220,9 @@ func validateGraphIdentity(graph model.Graph) error {
 			return fmt.Errorf("canonicalize evidence: duplicate node ID %q", node.ID)
 		}
 		nodeIDs[node.ID] = struct{}{}
+		if err := validateFieldEvidence(node); err != nil {
+			return fmt.Errorf("canonicalize evidence: node %q: %w", node.ID, err)
+		}
 	}
 	edgeIDs := make(map[string]struct{}, len(graph.Edges))
 	for _, edge := range graph.Edges {
@@ -205,6 +235,129 @@ func validateGraphIdentity(graph model.Graph) error {
 		edgeIDs[edge.ID] = struct{}{}
 	}
 	return nil
+}
+
+func validateFieldEvidence(node model.Node) error {
+	if len(node.FieldEvidence) == 0 {
+		return nil
+	}
+	type fieldKey struct{ field, key string }
+	seenFields := make(map[fieldKey]struct{}, len(node.FieldEvidence))
+	for _, claim := range node.FieldEvidence {
+		if claim.Field != strings.TrimSpace(claim.Field) || claim.Key != strings.TrimSpace(claim.Key) {
+			return fmt.Errorf("fieldEvidence field and key must not contain surrounding whitespace")
+		}
+		switch claim.Field {
+		case model.FieldVersion:
+			if claim.Key != "" {
+				return fmt.Errorf("version fieldEvidence must not have a key")
+			}
+		case model.FieldDigest, model.FieldProperty:
+			if claim.Key == "" {
+				return fmt.Errorf("%s fieldEvidence must have a key", claim.Field)
+			}
+		default:
+			return fmt.Errorf("unsupported fieldEvidence field %q", claim.Field)
+		}
+		key := fieldKey{field: claim.Field, key: claim.Key}
+		if _, exists := seenFields[key]; exists {
+			return fmt.Errorf("duplicate fieldEvidence %q", fieldEvidenceName(claim.Field, claim.Key))
+		}
+		seenFields[key] = struct{}{}
+		if len(claim.Values) == 0 {
+			return fmt.Errorf("fieldEvidence %q has no values", fieldEvidenceName(claim.Field, claim.Key))
+		}
+		seenValues := make(map[string]struct{}, len(claim.Values))
+		for _, candidate := range claim.Values {
+			if candidate.Value == "" || candidate.Value != strings.TrimSpace(candidate.Value) {
+				return fmt.Errorf("fieldEvidence %q has an empty or untrimmed value", fieldEvidenceName(claim.Field, claim.Key))
+			}
+			if _, exists := seenValues[candidate.Value]; exists {
+				return fmt.Errorf("fieldEvidence %q has duplicate value %q", fieldEvidenceName(claim.Field, claim.Key), candidate.Value)
+			}
+			seenValues[candidate.Value] = struct{}{}
+			if !candidate.Evidence.Level.Valid() {
+				return fmt.Errorf("fieldEvidence %q value %q has invalid evidence level %q", fieldEvidenceName(claim.Field, claim.Key), candidate.Value, candidate.Evidence.Level)
+			}
+		}
+	}
+
+	encoded, err := json.Marshal(node)
+	if err != nil {
+		return fmt.Errorf("encode fieldEvidence validation copy: %w", err)
+	}
+	var resolved model.Node
+	if err := json.Unmarshal(encoded, &resolved); err != nil {
+		return fmt.Errorf("decode fieldEvidence validation copy: %w", err)
+	}
+	resolved.ResolveFieldEvidence()
+	resolvedClaims := make(map[fieldKey]model.FieldEvidence, len(resolved.FieldEvidence))
+	for _, claim := range resolved.FieldEvidence {
+		resolvedClaims[fieldKey{field: claim.Field, key: claim.Key}] = claim
+	}
+	for _, claim := range node.FieldEvidence {
+		key := fieldKey{field: claim.Field, key: claim.Key}
+		expected := resolvedClaims[key]
+		if claim.SelectedValue != expected.SelectedValue || claim.Conflict != expected.Conflict {
+			return fmt.Errorf("fieldEvidence %q has inconsistent selectedValue or conflict", fieldEvidenceName(claim.Field, claim.Key))
+		}
+		switch claim.Field {
+		case model.FieldVersion:
+			if node.Version != expected.SelectedValue || !sameStringSet(node.ObservedVersions, fieldValues(expected.Values)) {
+				return fmt.Errorf("fieldEvidence %q is inconsistent with version fields", fieldEvidenceName(claim.Field, claim.Key))
+			}
+		case model.FieldDigest:
+			if node.Digests[claim.Key] != expected.SelectedValue {
+				return fmt.Errorf("fieldEvidence %q is inconsistent with digests", fieldEvidenceName(claim.Field, claim.Key))
+			}
+		case model.FieldProperty:
+			if node.Properties[claim.Key] != expected.SelectedValue {
+				return fmt.Errorf("fieldEvidence %q is inconsistent with properties", fieldEvidenceName(claim.Field, claim.Key))
+			}
+		}
+	}
+	return nil
+}
+
+func fieldEvidenceName(field, key string) string {
+	if key == "" {
+		return field
+	}
+	return field + ":" + key
+}
+
+func fieldValues(values []model.FieldValueEvidence) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, value.Value)
+	}
+	return result
+}
+
+func sameStringSet(left, right []string) bool {
+	leftSet := make(map[string]struct{}, len(left))
+	for _, value := range left {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			leftSet[value] = struct{}{}
+		}
+	}
+	rightSet := make(map[string]struct{}, len(right))
+	for _, value := range right {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			rightSet[value] = struct{}{}
+		}
+	}
+	if len(leftSet) != len(rightSet) {
+		return false
+	}
+	for value := range leftSet {
+		if _, exists := rightSet[value]; !exists {
+			return false
+		}
+	}
+	return true
 }
 
 func requireJSONEOF(decoder *json.Decoder) error {
@@ -223,6 +376,13 @@ func normalizeGraphTimes(graph *model.Graph) {
 	for index := range graph.Nodes {
 		graph.Nodes[index].Evidence.FirstSeen = graph.Nodes[index].Evidence.FirstSeen.UTC()
 		graph.Nodes[index].Evidence.LastSeen = graph.Nodes[index].Evidence.LastSeen.UTC()
+		for fieldIndex := range graph.Nodes[index].FieldEvidence {
+			for valueIndex := range graph.Nodes[index].FieldEvidence[fieldIndex].Values {
+				evidence := &graph.Nodes[index].FieldEvidence[fieldIndex].Values[valueIndex].Evidence
+				evidence.FirstSeen = evidence.FirstSeen.UTC()
+				evidence.LastSeen = evidence.LastSeen.UTC()
+			}
+		}
 	}
 	for index := range graph.Edges {
 		graph.Edges[index].Evidence.FirstSeen = graph.Edges[index].Evidence.FirstSeen.UTC()
@@ -230,9 +390,15 @@ func normalizeGraphTimes(graph *model.Graph) {
 	}
 }
 
-func canonicalSignatureMessage(canonical []byte) []byte {
-	message := make([]byte, 0, len(canonicalSignatureDomain)+len(canonical))
-	message = append(message, canonicalSignatureDomain...)
+func canonicalSignatureMessageV1(canonical []byte) []byte {
+	message := make([]byte, 0, len(canonicalSignatureDomainV1)+len(canonical))
+	message = append(message, canonicalSignatureDomainV1...)
+	return append(message, canonical...)
+}
+
+func canonicalSignatureMessageV2(canonical []byte) []byte {
+	message := make([]byte, 0, len(canonicalSignatureDomainV2)+len(canonical))
+	message = append(message, canonicalSignatureDomainV2...)
 	return append(message, canonical...)
 }
 

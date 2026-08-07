@@ -77,7 +77,7 @@ func TestCanonicalEvidenceSignAndVerifyCommands(t *testing.T) {
 	if err := json.Unmarshal(data, &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if envelope.PayloadType != signing.CanonicalPayloadType || envelope.Canonicalization != signing.CanonicalizationEvidenceV1 {
+	if envelope.PayloadType != signing.CanonicalPayloadType || envelope.Canonicalization != signing.CanonicalizationEvidenceV2 {
 		t.Fatalf("canonical signature mode was not recorded: %+v", envelope)
 	}
 }

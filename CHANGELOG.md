@@ -8,12 +8,24 @@ All notable changes to this experimental project are documented here.
 
 - Added `sign --canonical-evidence` for reproducible evidence-graph signatures across JSON whitespace, object-member order, graph collection order, and equivalent timestamp offsets.
 - Added a versioned signature-envelope profile that records the canonical payload type and RFC 8785-based canonicalization mode; `verify` selects the declared mode without guessing.
+- Added canonical envelope v0.3 and evidence profile v2 for field-evidence ordering and timestamps while retaining v0.2/profile-v1 verification.
+- Added v0.8 field-level candidates for versions, digests, and retained properties, including evidence provenance and explicit conflict markers.
+- Added `forbidFieldConflicts` policy enforcement and conflict-preserving CycloneDX properties.
+
+### Changed
+
+- Mutable field selection now uses evidence strength, then observation recency, then a lexical tie-breaker instead of arrival order.
+- Legacy graphs without field provenance migrate their existing mutable values as inferred candidates rather than inheriting node-level verification.
+- Graph diff reports field-evidence changes even when the strongest selected value remains unchanged.
 
 ### Security
 
 - Canonical evidence input rejects duplicate JSON members, duplicate graph identities, unknown graph fields, invalid UTF-8, and trailing JSON values before signing.
-- Canonical signatures use a mode-specific domain prefix, preventing a canonical v0.2 signature from being interpreted as a legacy raw-byte v0.1 signature.
+- Canonical signatures use profile-specific domain prefixes, preventing v0.3/v2, v0.2/v1, and legacy raw-byte v0.1 signatures from being reinterpreted across modes.
 - Legacy exact-byte signing and verification remain backward compatible; canonical signing does not broaden content collection or provide confidentiality.
+- Signature-looking OTLP attributes no longer promote model evidence to verified; the general OTLP evidence-level extension remains downgrade-only.
+- Weaker or merely newer claims cannot silently overwrite stronger field evidence, and competing values can fail policy.
+- Canonical signing rejects unknown, duplicate, empty, or internally inconsistent field evidence instead of silently repairing a tampered selected value before verification.
 
 ### Validation
 
@@ -25,6 +37,11 @@ All notable changes to this experimental project are documented here.
 
 - Added an evidence-backed OpenTelemetry GenAI proposal for aligning MCP semantic conventions with the `2026-07-28` stateless lifecycle and protocol-reported server metadata.
 - Submitted the proposal as [`open-telemetry/semantic-conventions-genai#437`](https://github.com/open-telemetry/semantic-conventions-genai/issues/437); submission is not acceptance, and no new standard compatibility claim or project alias is introduced.
+
+### Known gaps
+
+- Built-in OpenSSF Model Signing verification and per-source trust caps are still planned; compact `verified` input depends on a separately trusted adapter.
+- Distinct field candidates and observed versions are not yet cardinality-bounded for long-lived graphs.
 
 ## [0.7.0] - 2026-08-05
 

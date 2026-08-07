@@ -2,13 +2,13 @@
 
 AI telemetry may contain source code, credentials, personal data, system prompts, retrieved documents, tool parameters, and model responses. The project therefore uses a metadata-only default.
 
-## Never retained by the v0.7 normalizer
+## Never retained by the v0.8 normalizer
 
 - prompt and completion bodies;
 - tool call arguments and results;
 - retrieved document content;
 - API keys, tokens, cookies, and environment variable values;
-- model input and output attachments.
+- model input and output attachments;
 - MCP tool descriptions, raw input/output schemas, arguments, and results.
 
 These attributes may be present in an input OTLP document, but the normalizer does not copy them into the graph.
@@ -16,6 +16,8 @@ These attributes may be present in an input OTLP document, but the normalizer do
 The Dify, Microsoft Agent Framework, and MCP executable checks intentionally contain marker values in prompt, input, output, tool-description/schema, tool-argument, and tool-result fields. Automated checks fail if any marker reaches the normalized graph or CycloneDX output.
 
 MCP `tools/list` declarations retain only tool names, server identity/version, selected untrusted boolean annotation hints, and a SHA-256 of the adapter's JSON encoding of the input schema. The digest detects schema drift but does not make the schema safe or trustworthy. Tool names and schema digests can still be sensitive metadata.
+
+Field conflict tracking retains distinct historical values for versions, digests, and already allowlisted properties rather than only the selected value. CycloneDX exports these candidates as namespaced properties so evidence strength and conflicts remain auditable. This does not broaden the attribute allowlist or retain content, but it can increase the amount and lifetime of operational metadata; apply the same access control and retention policy to candidate values as to the rest of the graph.
 
 ## Prompt change detection
 
@@ -37,6 +39,7 @@ The live endpoints expose metadata that may still be operationally sensitive. Bo
 - Input files remain the operator's responsibility. This tool protects its output; it does not erase or secure the original telemetry.
 - A trace ID can become identifying when correlated with another telemetry backend.
 - MCP server and tool names, capability sets, and schema digests can expose operational or security posture.
+- Conflicting historical versions, digests, endpoints, and other allowlisted properties can reveal deployment changes even when they are not selected.
 - Ed25519 signatures provide integrity and origin authentication, not confidentiality.
 - Canonical signing does not redact additional data. It signs every field already retained in the evidence graph, so access controls and retention rules still apply to the graph and its metadata.
 

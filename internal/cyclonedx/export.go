@@ -114,6 +114,24 @@ func Export(graph model.Graph) BOM {
 		for _, version := range node.ObservedVersions {
 			component.Properties = append(component.Properties, Property{Name: "aibom:observed-version", Value: version})
 		}
+		for _, claim := range node.FieldEvidence {
+			fieldName := claim.Field
+			if claim.Key != "" {
+				fieldName += ":" + claim.Key
+			}
+			baseName := "aibom:field-evidence:" + fieldName
+			component.Properties = append(component.Properties,
+				Property{Name: baseName + ":selected", Value: claim.SelectedValue})
+			for _, candidate := range claim.Values {
+				component.Properties = append(component.Properties, Property{
+					Name: baseName + ":candidate:" + string(candidate.Evidence.Level), Value: candidate.Value,
+				})
+			}
+			if claim.Conflict || len(claim.Values) > 1 {
+				component.Properties = append(component.Properties,
+					Property{Name: "aibom:field-conflict", Value: fieldName})
+			}
+		}
 		sort.Slice(component.Hashes, func(i, j int) bool { return component.Hashes[i].Algorithm < component.Hashes[j].Algorithm })
 		sort.Slice(component.Properties, func(i, j int) bool {
 			if component.Properties[i].Name == component.Properties[j].Name {

@@ -1,0 +1,29 @@
+{
+  "source": "field-precedence-fixture",
+  "observations": [
+    {
+      "timestamp": "2026-08-07T08:00:00Z",
+      "level": "verified",
+      "source": "fixture-signature-verifier",
+      "attributes": {
+        "gen_ai.provider.name": "example-provider",
+        "gen_ai.request.model": "stable-model-alias",
+        "gen_ai.response.model": "weights-v1",
+        "gen_ai.model.digest": "verified-digest",
+        "server.address": "verified.example"
+      }
+    },
+    {
+      "timestamp": "2026-08-07T09:00:00Z",
+      "level": "declared",
+      "source": "fixture-deployment-config",
+      "attributes": {
+        "gen_ai.provider.name": "example-provider",
+        "gen_ai.request.model": "stable-model-alias",
+        "gen_ai.response.model": "weights-v2",
+        "gen_ai.model.digest": "declared-digest",
+        "server.address": "declared.example"
+      }
+    }
+  ]
+}

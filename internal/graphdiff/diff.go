@@ -123,6 +123,9 @@ func changedFields(before, after model.Node) []string {
 	if !reflect.DeepEqual(before.Properties, after.Properties) {
 		fields = append(fields, "properties")
 	}
+	if !reflect.DeepEqual(before.FieldEvidence, after.FieldEvidence) {
+		fields = append(fields, "fieldEvidence")
+	}
 	if before.Evidence.Level != after.Evidence.Level {
 		fields = append(fields, "evidence.level")
 	}

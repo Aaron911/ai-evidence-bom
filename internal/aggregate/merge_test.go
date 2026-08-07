@@ -1,6 +1,7 @@
 package aggregate
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -75,5 +76,69 @@ func TestMergeDoesNotLetOlderSnapshotReplaceCurrentVersion(t *testing.T) {
 	merged := Merge(current, incoming, newer)
 	if merged.Nodes[0].Version != "2" || merged.Nodes[0].Properties["env"] != "prod" {
 		t.Fatalf("older snapshot replaced current values: %+v", merged.Nodes[0])
+	}
+}
+
+func TestMergePrefersStrongEvidenceAndExposesConflictRegardlessOfArrivalOrder(t *testing.T) {
+	verifiedAt := time.Date(2026, 8, 7, 10, 0, 0, 0, time.UTC)
+	declaredAt := verifiedAt.Add(time.Hour)
+	nodeID := model.StableNodeID("model", "provider", "stable-alias")
+	verifiedNode := model.Node{
+		ID: nodeID, Type: "model", Name: "stable-alias", Provider: "provider", Version: "weights-v1",
+		Digests: map[string]string{"sha256": "verified-digest"}, Properties: map[string]string{"region": "verified-region"},
+		Evidence: model.EvidenceSummary{
+			Level: model.EvidenceVerified, ObservationCount: 1, FirstSeen: verifiedAt, LastSeen: verifiedAt,
+			Sources: []string{"signature-verifier"},
+		},
+	}
+	verifiedNode.AddFieldEvidence(model.FieldVersion, "", "weights-v1", verifiedNode.Evidence)
+	verifiedNode.AddFieldEvidence(model.FieldDigest, "sha256", "verified-digest", verifiedNode.Evidence)
+	verifiedNode.AddFieldEvidence(model.FieldProperty, "region", "verified-region", verifiedNode.Evidence)
+	verifiedNode.ResolveFieldEvidence()
+	declaredNode := model.Node{
+		ID: nodeID, Type: "model", Name: "stable-alias", Provider: "provider", Version: "weights-v2",
+		Digests: map[string]string{"sha256": "declared-digest"}, Properties: map[string]string{"region": "declared-region"},
+		Evidence: model.EvidenceSummary{
+			Level: model.EvidenceDeclared, ObservationCount: 1, FirstSeen: declaredAt, LastSeen: declaredAt,
+			Sources: []string{"deployment-config"},
+		},
+	}
+	declaredNode.AddFieldEvidence(model.FieldVersion, "", "weights-v2", declaredNode.Evidence)
+	declaredNode.AddFieldEvidence(model.FieldDigest, "sha256", "declared-digest", declaredNode.Evidence)
+	declaredNode.AddFieldEvidence(model.FieldProperty, "region", "declared-region", declaredNode.Evidence)
+	declaredNode.ResolveFieldEvidence()
+	verified := model.Graph{Source: "evidence", Nodes: []model.Node{verifiedNode}}
+	declared := model.Graph{Source: "evidence", Nodes: []model.Node{declaredNode}}
+
+	forward := Merge(Merge(model.Graph{Source: "evidence"}, verified, verifiedAt), declared, declaredAt)
+	reverse := Merge(Merge(model.Graph{Source: "evidence"}, declared, declaredAt), verified, declaredAt)
+	if !reflect.DeepEqual(forward.Nodes, reverse.Nodes) {
+		t.Fatalf("arrival order changed merged nodes:\nforward=%+v\nreverse=%+v", forward.Nodes, reverse.Nodes)
+	}
+	node := forward.Nodes[0]
+	if node.Version != "weights-v1" || node.Digests["sha256"] != "verified-digest" || node.Properties["region"] != "verified-region" {
+		t.Fatalf("weaker newer evidence replaced verified fields: %+v", node)
+	}
+	if len(node.FieldEvidence) != 3 {
+		t.Fatalf("field evidence=%d want=3: %+v", len(node.FieldEvidence), node.FieldEvidence)
+	}
+	for _, claim := range node.FieldEvidence {
+		if !claim.Conflict || len(claim.Values) != 2 {
+			t.Fatalf("conflict was not retained: %+v", claim)
+		}
+	}
+}
+
+func TestMergeDoesNotInventFieldVerificationForLegacyGraph(t *testing.T) {
+	seenAt := time.Date(2026, 8, 7, 10, 0, 0, 0, time.UTC)
+	legacy := model.Graph{Nodes: []model.Node{{
+		ID: "model:legacy", Type: "model", Name: "legacy", Version: "v1",
+		ObservedVersions: []string{"v0", "v1"},
+		Evidence:         model.EvidenceSummary{Level: model.EvidenceVerified, ObservationCount: 7, FirstSeen: seenAt, LastSeen: seenAt},
+	}}}
+	merged := Merge(model.Graph{}, legacy, seenAt)
+	claim := merged.Nodes[0].FieldEvidence[0]
+	if merged.Nodes[0].Version != "v1" || len(claim.Values) != 2 || claim.Values[0].Evidence.Level != model.EvidenceInferred || claim.Values[0].Evidence.ObservationCount != 1 {
+		t.Fatalf("legacy field inherited unverifiable node evidence: %+v", claim)
 	}
 }

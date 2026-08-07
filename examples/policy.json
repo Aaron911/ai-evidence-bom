@@ -9,5 +9,6 @@
   "requireProvidersFor": ["model", "tool", "data_source"],
   "deniedNamePatterns": ["(?i)(^|[._-])(shell|execute)([._-]|$)"],
   "requireVersionsFor": ["model", "mcp_server", "tool"],
-  "forbidInferred": true
+  "forbidInferred": true,
+  "forbidFieldConflicts": true
 }
