@@ -305,6 +305,84 @@ Continue monitoring OpenTelemetry issue `#437`; actionable maintainer feedback s
 
 The test fails if trust depends only on a self-reported evidence level, if source rules change results by arrival order, or if configuration requires framework-specific code. A failure should narrow the meaning of `verified` before integrating more attestation formats.
 
+## OpenTelemetry MCP 2026 lifecycle patch calibration — 2026-08-13
+
+This is an unreleased upstream-contribution iteration. It does not change the
+AI Evidence BOM product, evidence graph, or schema.
+
+### Uncertainty tested
+
+Can the MCP `2026-07-28` lifecycle gap be separated from the disputed peer
+server-identity proposal and supported by native telemetry from a current
+official SDK, without inventing fields or retaining tool content?
+
+### Evidence gained
+
+- The OpenTelemetry GenAI repository at reviewed commit `8d3e4a0` still
+  documents the session-oriented lifecycle and does not include
+  `server/discover` in the well-known MCP methods.
+- Official MCP Python SDK `2.0.0` negotiated protocol `2026-07-28` through its
+  public client/server APIs. Its native server telemetry emitted
+  `server/discover`, `tools/list`, and `tools/call get_weather` spans, with
+  `mcp.protocol.version=2026-07-28` on all three and no `mcp.session.id`.
+- The captured telemetry did not retain the test location, tool result, tool
+  description, tool arguments, tool result attribute, or schema content.
+- A lifecycle-only OpenTelemetry patch now adds `server/discover`, makes the
+  session attribute and session-duration metrics explicitly version-aware,
+  documents current and legacy lifecycles, and adds a deterministic official
+  Python SDK reference scenario. It is committed locally as `49fa922` on
+  branch `mcp-2026-lifecycle`; it has not been pushed or submitted upstream.
+  Exact boundaries and negative evidence are recorded in
+  [`docs/evidence/otel-mcp-2026-lifecycle.md`](evidence/otel-mcp-2026-lifecycle.md).
+- The upstream repository's full generation target and registry policy check
+  passed. The scenario lock resolved, Python syntax and Ruff checks passed,
+  generated output was reproducible, and explicit privacy assertions passed.
+- The conformance runner completed in report-only mode but exposed four
+  pre-existing overlaps between MCP server spans and generic GenAI
+  `execute_tool` rules: span name, `SERVER` versus `INTERNAL` kind, and absent
+  `gen_ai.tool.call.id` and `gen_ai.tool.type`. These warnings were retained as
+  negative evidence rather than suppressed.
+
+### Decision
+
+**Continue upstream-first with a deliberately split contribution.** The
+stateless lifecycle is independently demonstrable and should be reviewed
+without peer identity or subscription semantics in the same patch. The local
+patch therefore does not add `mcp.server.*`, does not add
+`subscriptions/listen`, and does not modify the AI Evidence BOM schema.
+
+Issue discussion and a review-ready local commit are not standards acceptance.
+No upstream branch, pull request, tag, or release has been created in this
+iteration.
+
+### Risks and pivot signals
+
+- Issue `#437` still has no confirmed maintainer decision. External reviewer
+  feedback to split lifecycle and peer metadata is useful scope guidance, not
+  maintainer approval.
+- The native reference currently demonstrates server-side in-process spans. If
+  reviewers require client spans or a concrete stdio/HTTP transport, extend the
+  scenario narrowly rather than synthesizing those values.
+- The `execute_tool` warnings indicate an MCP/GenAI semantic-composition gap.
+  If maintainers consider those warnings blocking, address them as a separate
+  convention question instead of weakening the lifecycle assertions.
+- Legacy MCP versions still define initialization and can define sessions.
+  Compatibility must remain version-aware; current behavior must not erase
+  valid legacy telemetry.
+- If upstream has already started overlapping lifecycle work before submission,
+  rebase and reduce this patch to the missing pieces rather than competing with
+  the accepted direction.
+
+### Next smallest falsifiable test
+
+After explicit authorization for the external write, publish the lifecycle-only
+commit as an upstream pull request linked to issue `#437`. The test passes when
+maintainers confirm the version-aware lifecycle direction or request bounded
+changes that preserve the same evidence boundary. It fails if the lifecycle
+gap is rejected, already solved by another accepted change, or the reference
+cannot credibly demonstrate the convention; record that result before resuming
+peer metadata work.
+
 ## Release calibration template
 
 For each later release, append a dated section containing:
