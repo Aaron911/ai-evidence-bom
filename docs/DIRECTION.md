@@ -337,6 +337,10 @@ official SDK, without inventing fields or retaining tool content?
 - The upstream repository's full generation target and registry policy check
   passed. The scenario lock resolved, Python syntax and Ruff checks passed,
   generated output was reproducible, and explicit privacy assertions passed.
+- Project documentation commit `a24fc0c` was pushed to `main`, and GitHub
+  Actions [`ci #18`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/31675945542)
+  completed successfully. This validates the project record, not the unpushed
+  upstream patch.
 - The conformance runner completed in report-only mode but exposed four
   pre-existing overlaps between MCP server spans and generic GenAI
   `execute_tool` rules: span name, `SERVER` versus `INTERNAL` kind, and absent

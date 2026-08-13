@@ -89,6 +89,13 @@ The generator emitted repository-wide warnings about unstable `definition/2`
 files and future requirement-level fields. They were already present outside
 this lifecycle change and did not produce policy violations.
 
+The AI Evidence BOM direction, roadmap, and this evidence record were pushed as
+project commit `a24fc0c`. GitHub Actions
+[`ci #18`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/31675945542)
+completed successfully. That workflow validates the committed project record;
+the separate OpenTelemetry patch remains local and was validated with the
+upstream checks listed above.
+
 ## Remaining boundary
 
 This is server-side in-process SDK evidence, not a client-span or stdio/HTTP
