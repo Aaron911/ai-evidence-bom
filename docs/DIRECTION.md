@@ -429,7 +429,12 @@ field selection?
 - Go 1.26.6 race tests, vet, build, CycloneDX schema positive/negative checks,
   Agent Framework live capture, Dify instrumentation execution, MCP runtime,
   and a real v0.9 canonical sign/verify passed locally. Full Dify could not run
-  locally because Docker is unavailable; remote validation is still required.
+  locally because Docker is unavailable.
+- Implementation commit `699ec14` passed GitHub Actions
+  [`ci #20`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/32557634364)
+  on Go 1.26.6 and the complete path-triggered Dify workflow
+  [`#10`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/32557634376).
+  This validates the candidate; it does not create a tag or release.
 
 ### Decision
 
