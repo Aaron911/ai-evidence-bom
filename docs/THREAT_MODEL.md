@@ -39,11 +39,14 @@
 - Versions, digests, and retained properties keep field-specific candidate evidence. Stronger evidence wins before recency, competing values remain visible, and policy can reject conflicts.
 - Merge selection is independent of arrival order, including a deterministic lexical tie-breaker when strength and time are equal.
 - Legacy graphs without field provenance are migrated as inferred field candidates instead of inheriting a potentially misleading strong node summary.
+- Every source defaults to a maximum evidence level of observed. Only an exact, case-sensitive operator rule can preserve verified evidence, and source rules can impose stricter caps.
+- Source trust policies reject unknown fields, invalid levels, unsupported versions, empty or duplicate source rules, and trailing JSON before ingestion begins.
+- A live receiver reapplies current source caps to persisted node, edge, and field-candidate summaries, preventing pre-v0.9 untrusted verification from silently surviving restart.
 
 ## Known limitations
 
 - An observed trace proves only that an instrumented component reported an event; it does not prove the event is truthful.
-- `verified` compact observations still depend on the caller selecting and trusting an external verifier adapter. Independent built-in OpenSSF Model Signing verification is planned.
+- Exact source matching is authorization policy, not source authentication. Compact documents and OTLP resources can self-report source labels; a verified grant is sound only when the surrounding adapter identity or transport is separately controlled or authenticated. Independent built-in OpenSSF Model Signing verification is planned.
 - `scan` input files are loaded into memory and do not yet have a configurable size limit; live collection is bounded.
 - The built-in HTTP and gRPC servers do not terminate TLS. Remote use requires a trusted TLS proxy and access controls.
 - Retry deduplication is bounded and in-memory, so its history resets on restart and very old duplicates may be counted again.

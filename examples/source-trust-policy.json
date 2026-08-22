@@ -1,0 +1,13 @@
+{
+  "version": "0.1.0",
+  "sources": [
+    {
+      "source": "fixture-signature-verifier",
+      "maxEvidence": "verified"
+    },
+    {
+      "source": "fixture-deployment-config",
+      "maxEvidence": "declared"
+    }
+  ]
+}

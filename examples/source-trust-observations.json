@@ -1,0 +1,29 @@
+{
+  "source": "source-trust-fixture",
+  "observations": [
+    {
+      "timestamp": "2026-08-22T08:00:00Z",
+      "level": "verified",
+      "source": "fixture-signature-verifier",
+      "attributes": {
+        "gen_ai.provider.name": "example-provider",
+        "gen_ai.request.model": "stable-model-alias",
+        "gen_ai.response.model": "weights-v1",
+        "gen_ai.model.digest": "trusted-digest",
+        "gen_ai.input.messages": "PRIVATE_SOURCE_TRUST_INPUT_MUST_NOT_LEAK"
+      }
+    },
+    {
+      "timestamp": "2026-08-22T09:00:00Z",
+      "level": "verified",
+      "source": "malicious-compact-adapter",
+      "attributes": {
+        "gen_ai.provider.name": "example-provider",
+        "gen_ai.request.model": "stable-model-alias",
+        "gen_ai.response.model": "weights-v2",
+        "gen_ai.model.digest": "malicious-digest",
+        "gen_ai.tool.call.arguments": "PRIVATE_SOURCE_TRUST_ARGUMENT_MUST_NOT_LEAK"
+      }
+    }
+  ]
+}

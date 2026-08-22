@@ -6,7 +6,7 @@ It answers a narrower question than an ordinary scanner:
 
 > What models, agents, tools, MCP servers, prompts, and data sources were actually observed at runtime, and how did that set change?
 
-The project is an experimental v0.8 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
+The project is an experimental v0.9 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
 
 ## Current capabilities
 
@@ -17,6 +17,7 @@ The project is an experimental v0.8 validation build. It is not a compliance cer
 - Includes source-derived contracts plus executable compatibility checks for Dify and Microsoft Agent Framework.
 - Uses MCP protocol discovery and runtime telemetry together to distinguish declared server capabilities from observed tool calls.
 - Records evidence as `inferred`, `declared`, `observed`, or `verified`.
+- Caps every source at `observed` by default and preserves `verified` only for exact source names authorized by an operator policy.
 - Retains field-level evidence for versions, digests, and properties, resolves them independently of arrival order, and exposes competing values as conflicts.
 - Exports CycloneDX 1.7 JSON with AI/ML component types and relationships, validated in CI against the checksum-pinned official schema.
 - Compares two evidence graphs to find new, removed, and changed capabilities.
@@ -28,7 +29,7 @@ The project is an experimental v0.8 validation build. It is not a compliance cer
 
 ## Quick start
 
-Requirements: Go 1.26.5 or later. Earlier Go 1.26 patch releases contain standard-library vulnerabilities fixed in 1.26.5.
+Requirements: Go 1.26.6 or later. Earlier Go 1.26 patch releases contain reachable standard-library vulnerabilities fixed in 1.26.6.
 
 ```bash
 go install github.com/Aaron911/ai-evidence-bom/cmd/aiebom@latest
@@ -138,6 +139,31 @@ New signatures use envelope v0.3 with `payloadType=aiebom-evidence-graph` and `c
 
 See the [canonical-signing evidence record](docs/evidence/canonical-signing.md) for the pinned dependency, positive and negative controls, and validation boundary.
 
+### Authorize verifier sources
+
+Compact input cannot grant itself `verified` authority. Without a source trust policy, any `verified` claim is reduced to `observed`. To authorize a separately controlled verifier adapter, use an exact-source policy:
+
+```json
+{
+  "version": "0.1.0",
+  "sources": [
+    {"source": "fixture-signature-verifier", "maxEvidence": "verified"},
+    {"source": "fixture-deployment-config", "maxEvidence": "declared"}
+  ]
+}
+```
+
+```bash
+./bin/aiebom scan \
+  --input examples/conflicting-model-evidence.json \
+  --source-trust-policy examples/source-trust-policy.json \
+  --graph-out work/conflict.evidence.json
+```
+
+Rules match the complete source name exactly and case-sensitively; there are no wildcard or prefix grants. A rule can also reduce a source to `observed`, `declared`, or `inferred`. The same flag is available on `collect`, and `/v1/stats` reports `evidenceDowngrades`.
+
+The source name is still a label, not a cryptographic identity. A `verified` grant is sound only when the operator also controls or authenticates the adapter/transport that is allowed to use that name. See the [v0.9 source-trust evidence record](docs/evidence/v0.9.0.md).
+
 ## Evidence levels
 
 | Level | Meaning |
@@ -145,11 +171,11 @@ See the [canonical-signing evidence record](docs/evidence/canonical-signing.md) 
 | `inferred` | Derived by a heuristic and not directly asserted by the source. |
 | `declared` | Present in configuration or supplied metadata. |
 | `observed` | Seen in a runtime event or trace. |
-| `verified` | Supplied by an explicitly trusted non-OTLP verifier adapter; built-in model-artifact verification is not implemented yet. |
+| `verified` | Supplied by a separately controlled non-OTLP verifier adapter whose exact source name is authorized by operator policy; built-in model-artifact verification is not implemented yet. |
 
 Higher evidence does not mean that a component is safe. It means only that its identity has stronger support.
 
-For mutable fields, the selected value is the candidate with the strongest evidence, then the latest observation time, then lexical order as a deterministic tie-breaker. All competing candidates remain in `fieldEvidence`, and `conflict=true` prevents a weaker but newer declaration from silently replacing stronger identity evidence. Ordinary OTLP attributes, including signature-looking assertions, cannot promote evidence to `verified`.
+For mutable fields, the selected value is the candidate with the strongest evidence, then the latest observation time, then lexical order as a deterministic tie-breaker. All competing candidates remain in `fieldEvidence`, and `conflict=true` prevents a weaker but newer declaration from silently replacing stronger identity evidence. Ordinary OTLP attributes, including signature-looking assertions, cannot promote evidence to `verified`; compact input also remains capped unless an exact source rule authorizes it.
 
 The reproducible conflict fixture and its positive, negative, and migration controls are documented in the [v0.8 field-evidence record](docs/evidence/v0.8.0.md).
 
@@ -158,11 +184,16 @@ The reproducible conflict fixture and its positive, negative, and migration cont
 ```text
 OTLP/HTTP JSON or protobuf ──┐
 OTLP/gRPC protobuf ──────────┼──> live receiver ──┐
-                            │                    v
-OTLP JSON files / declarations ────────> evidence normalizer
+                            │                    │
+OTLP JSON files / declarations ──────────────────┤
+                                                 v
+                                      source trust caps
                                                  |
                                                  v
-                                      vendor-neutral evidence graph
+                                      evidence normalizer
+                                                 |
+                                                 v
+                                      vendor-neutral graph
                                           |          |          |
                                           v          v          v
                                     CycloneDX      diff       policy/sign
@@ -221,7 +252,7 @@ See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for exact framework coverage 
 This project does not currently:
 
 - capture traffic from closed-source clients without instrumentation;
-- ingest OTLP metrics, logs, or profiles; v0.8 deliberately accepts traces only;
+- ingest OTLP metrics, logs, or profiles; v0.9 deliberately accepts traces only;
 - make the official MCP SDK emit OTLP automatically; the v0.7 live check installs application instrumentation around its real SDK calls;
 - trust MCP tool descriptions, schemas, or annotations as proof of safe behavior;
 - prove which weights a hosted model provider actually served;

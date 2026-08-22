@@ -28,6 +28,7 @@ import (
 	inputpkg "github.com/Aaron911/ai-evidence-bom/internal/input"
 	"github.com/Aaron911/ai-evidence-bom/internal/model"
 	"github.com/Aaron911/ai-evidence-bom/internal/normalize"
+	"github.com/Aaron911/ai-evidence-bom/internal/trust"
 )
 
 const (
@@ -45,19 +46,21 @@ type Config struct {
 	Source           string
 	AuthToken        string
 	SensitiveHMACKey []byte
+	SourceTrust      trust.Policy
 	MaxRequestBytes  int64
 	MaxDedupeItems   int
 	Now              func() time.Time
 }
 
 type Stats struct {
-	Requests       uint64    `json:"requests"`
-	ReceivedSpans  uint64    `json:"receivedSpans"`
-	AcceptedSpans  uint64    `json:"acceptedSpans"`
-	DuplicateSpans uint64    `json:"duplicateSpans"`
-	PendingSpans   uint64    `json:"pendingSpans"`
-	FailedRequests uint64    `json:"failedRequests"`
-	LastAcceptedAt time.Time `json:"lastAcceptedAt,omitempty"`
+	Requests           uint64    `json:"requests"`
+	ReceivedSpans      uint64    `json:"receivedSpans"`
+	AcceptedSpans      uint64    `json:"acceptedSpans"`
+	DuplicateSpans     uint64    `json:"duplicateSpans"`
+	EvidenceDowngrades uint64    `json:"evidenceDowngrades"`
+	PendingSpans       uint64    `json:"pendingSpans"`
+	FailedRequests     uint64    `json:"failedRequests"`
+	LastAcceptedAt     time.Time `json:"lastAcceptedAt,omitempty"`
 }
 
 // Receiver accepts OTLP/HTTP and OTLP/gRPC traces and continuously
@@ -96,6 +99,9 @@ func New(config Config) (*Receiver, error) {
 	}
 	if config.Now == nil {
 		config.Now = time.Now
+	}
+	if err := config.SourceTrust.Validate(); err != nil {
+		return nil, fmt.Errorf("validate source trust policy: %w", err)
 	}
 	if config.Source == "" {
 		config.Source = "otlp-http"
@@ -313,6 +319,9 @@ func (receiver *Receiver) accept(observations []inputpkg.Observation, source str
 		unique = append(unique, observation)
 	}
 	receiver.trimDedupe()
+	trusted := receiver.config.SourceTrust.Apply(unique)
+	unique = trusted.Observations
+	receiver.stats.EvidenceDowngrades += uint64(trusted.Downgraded)
 
 	now := receiver.config.Now().UTC()
 	if len(unique) > 0 {
@@ -459,6 +468,12 @@ func (receiver *Receiver) loadExistingGraph() error {
 	if receiver.graph.SchemaVersion == "" {
 		return errors.New("existing graph has no schemaVersion")
 	}
+	receiver.config.SourceTrust.CapGraphInPlace(&receiver.graph)
+	receiver.graph.SchemaVersion = model.SchemaVersion
+	if receiver.graph.Metadata == nil {
+		receiver.graph.Metadata = make(map[string]string)
+	}
+	receiver.graph.Metadata["normalizer.version"] = model.SchemaVersion
 	receiver.graph.Canonicalize()
 	return nil
 }

@@ -6,6 +6,8 @@ All notable changes to this experimental project are documented here.
 
 ### Added
 
+- Added versioned, operator-defined exact-source trust policies for both `scan` and `collect`.
+- Added live `evidenceDowngrades` statistics and deterministic malicious/trusted compact-source fixtures.
 - Added `sign --canonical-evidence` for reproducible evidence-graph signatures across JSON whitespace, object-member order, graph collection order, and equivalent timestamp offsets.
 - Added a versioned signature-envelope profile that records the canonical payload type and RFC 8785-based canonicalization mode; `verify` selects the declared mode without guessing.
 - Added canonical envelope v0.3 and evidence profile v2 for field-evidence ordering and timestamps while retaining v0.2/profile-v1 verification.
@@ -14,12 +16,16 @@ All notable changes to this experimental project are documented here.
 
 ### Changed
 
+- Raised the minimum Go patch release from 1.26.5 to 1.26.6 after the pinned vulnerability gate found six reachable standard-library issues fixed by 1.26.6.
+- Continuous collection reapplies current source caps to persisted node, edge, and field-candidate summaries and recomputes field selections on startup.
 - Mutable field selection now uses evidence strength, then observation recency, then a lexical tie-breaker instead of arrival order.
 - Legacy graphs without field provenance migrate their existing mutable values as inferred candidates rather than inheriting node-level verification.
 - Graph diff reports field-evidence changes even when the strongest selected value remains unchanged.
 
 ### Security
 
+- Compact input can no longer grant itself `verified` authority: unmatched sources default to at most `observed`, while exact source rules can grant `verified` or impose stricter caps.
+- Source policy parsing rejects unknown fields, invalid levels, unsupported versions, empty or duplicate exact-source rules, and trailing JSON.
 - Canonical evidence input rejects duplicate JSON members, duplicate graph identities, unknown graph fields, invalid UTF-8, and trailing JSON values before signing.
 - Canonical signatures use profile-specific domain prefixes, preventing v0.3/v2, v0.2/v1, and legacy raw-byte v0.1 signatures from being reinterpreted across modes.
 - Legacy exact-byte signing and verification remain backward compatible; canonical signing does not broaden content collection or provide confidentiality.
@@ -40,7 +46,7 @@ All notable changes to this experimental project are documented here.
 
 ### Known gaps
 
-- Built-in OpenSSF Model Signing verification and per-source trust caps are still planned; compact `verified` input depends on a separately trusted adapter.
+- Built-in OpenSSF Model Signing verification is still planned. Exact source names are policy labels, not authenticated identities, so verified grants still require a separately controlled adapter or transport.
 - Distinct field candidates and observed versions are not yet cardinality-bounded for long-lived graphs.
 
 ## [0.7.0] - 2026-08-05

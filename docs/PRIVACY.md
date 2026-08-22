@@ -2,7 +2,7 @@
 
 AI telemetry may contain source code, credentials, personal data, system prompts, retrieved documents, tool parameters, and model responses. The project therefore uses a metadata-only default.
 
-## Never retained by the v0.8 normalizer
+## Never retained by the v0.9 normalizer
 
 - prompt and completion bodies;
 - tool call arguments and results;
@@ -18,6 +18,8 @@ The Dify, Microsoft Agent Framework, and MCP executable checks intentionally con
 MCP `tools/list` declarations retain only tool names, server identity/version, selected untrusted boolean annotation hints, and a SHA-256 of the adapter's JSON encoding of the input schema. The digest detects schema drift but does not make the schema safe or trustworthy. Tool names and schema digests can still be sensitive metadata.
 
 Field conflict tracking retains distinct historical values for versions, digests, and already allowlisted properties rather than only the selected value. CycloneDX exports these candidates as namespaced properties so evidence strength and conflicts remain auditable. This does not broaden the attribute allowlist or retain content, but it can increase the amount and lifetime of operational metadata; apply the same access control and retention policy to candidate values as to the rest of the graph.
+
+Source trust policies contain only exact source labels and maximum evidence levels. Applying a cap changes the in-memory evidence level before normalization; it does not retain the original higher claim, add input fields to the graph, or inspect prompt/model/tool content. Source labels can still reveal operational names and should be protected as evidence metadata.
 
 ## Prompt change detection
 

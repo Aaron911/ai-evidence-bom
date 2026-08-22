@@ -6,7 +6,7 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 
 > 实际运行时观察到了哪些 Agent、模型、工具、MCP Server、Prompt 和数据源，它们后来发生了什么变化？
 
-当前为实验性 v0.7，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
+当前为实验性 v0.9，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
 
 ## 当前能力
 
@@ -17,6 +17,8 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 - 提供 Dify 与 Microsoft Agent Framework 的源码契约和可执行兼容性检查；
 - 结合 MCP 协议发现与运行时遥测，区分“服务端声明可用”与“Agent 实际调用”；
 - 区分 `inferred`、`declared`、`observed`、`verified` 四级证据；
+- 为每个来源设置证据等级上限：默认最高为 `observed`，只有运维策略精确授权的来源才能保留 `verified`；
+- 对版本、摘要和保留属性记录字段级候选证据，确定性选择最强值并显式暴露冲突；
 - 导出 CycloneDX 1.7，并在 CI 中使用校验和固定的官方 Schema 验证；
 - 检测模型、工具、MCP、数据源和权限变化；
 - 使用节点策略和有向图路径策略作为 CI 门禁；
@@ -26,7 +28,7 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 
 ## 快速体验
 
-要求 Go 1.26.5 或更高版本；更早的 Go 1.26 补丁版本包含已在 1.26.5 修复的标准库漏洞。
+要求 Go 1.26.6 或更高版本；更早的 Go 1.26 补丁版本包含已在 1.26.6 修复的可达标准库漏洞。
 
 ```bash
 go install github.com/Aaron911/ai-evidence-bom/cmd/aiebom@latest
@@ -59,6 +61,19 @@ go build -o ./bin/aiebom ./cmd/aiebom
 ```
 
 示例策略会故意拒绝新出现的 `shell.execute` 能力，并以状态码 3 退出。
+
+## 授权可信验证器
+
+compact observation 不能再通过自报把自己升级为 `verified`。如果一个受控适配器确实完成了独立验证，需要由运维方精确授权其来源名称：
+
+```bash
+./bin/aiebom scan \
+  --input examples/conflicting-model-evidence.json \
+  --source-trust-policy examples/source-trust-policy.json \
+  --graph-out work/conflict.evidence.json
+```
+
+规则按完整来源名称区分大小写匹配，不支持通配授权，也可以把某个来源进一步限制为 `declared` 或 `inferred`。来源名称本身不是密码学身份；只有当适配器进程或传输通道也由运维方控制或认证时，授予 `verified` 才可信。详见 [v0.9 证据记录](docs/evidence/v0.9.0.md)。
 
 ## 可复现的证据签名
 
@@ -108,7 +123,7 @@ curl --fail-with-body \
 
 同一个 HTTP 地址还接受 `application/x-protobuf`，gRPC 端口实现标准 OTLP `TraceService/Export`。可通过 `GET /healthz` 检查健康状态，并通过 `/v1/evidence`、`/v1/bom`、`/v1/stats` 查看实时结果。
 
-现在可以直接接在 OpenTelemetry Collector 后面：可使用 [OTLP/HTTP Protobuf 配置](examples/otel-collector-http.yaml) 或 [OTLP/gRPC 配置](examples/otel-collector-grpc.yaml)。鉴权、请求限制、TLS 边界和协议范围见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。v0.7 只处理 traces，不接收 metrics、logs 或 profiles。
+现在可以直接接在 OpenTelemetry Collector 后面：可使用 [OTLP/HTTP Protobuf 配置](examples/otel-collector-http.yaml) 或 [OTLP/gRPC 配置](examples/otel-collector-grpc.yaml)。鉴权、请求限制、TLS 边界和协议范围见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。v0.9 只处理 traces，不接收 metrics、logs 或 profiles。
 
 无需模型 API Key 即可运行四项确定性兼容性检查：
 

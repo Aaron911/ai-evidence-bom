@@ -27,13 +27,14 @@ import (
 	"github.com/Aaron911/ai-evidence-bom/internal/normalize"
 	"github.com/Aaron911/ai-evidence-bom/internal/policy"
 	"github.com/Aaron911/ai-evidence-bom/internal/signing"
+	"github.com/Aaron911/ai-evidence-bom/internal/trust"
 )
 
 const usageText = `AI Evidence BOM
 
 Usage:
-  aiebom scan    --input traces.json --graph-out evidence.json [--bom-out bom.cdx.json]
-  aiebom collect --graph-out evidence.json [--listen 127.0.0.1:4318] [--grpc-listen 127.0.0.1:4317]
+  aiebom scan    --input traces.json --graph-out evidence.json [--bom-out bom.cdx.json] [--source-trust-policy trust.json]
+  aiebom collect --graph-out evidence.json [--listen 127.0.0.1:4318] [--grpc-listen 127.0.0.1:4317] [--source-trust-policy trust.json]
   aiebom export  --input evidence.json --output bom.cdx.json
   aiebom diff    --before old.json --after new.json --output diff.json [--fail-on-change]
   aiebom policy  --input evidence.json --policy policy.json --output report.json
@@ -44,6 +45,7 @@ Usage:
 Inputs to scan may be compact observation JSON or OTLP JSON with resourceSpans.
 Collect accepts OTLP/HTTP JSON or protobuf at POST /v1/traces and OTLP/gRPC TraceService exports.
 Prompt and tool-call content is not retained; optional prompt fingerprints use keyed HMAC-SHA-256.
+Sources are capped at observed evidence unless an exact source trust rule grants verified authority.
 `
 
 func main() {
@@ -98,6 +100,7 @@ func runCollect(args []string) error {
 	source := flags.String("source", "otlp", "receiver source name")
 	authTokenPath := flags.String("auth-token-file", "", "optional bearer token file")
 	hmacKeyPath := flags.String("sensitive-hmac-key-file", "", "optional key for privacy-preserving prompt fingerprints")
+	trustPolicyPath := flags.String("source-trust-policy", "", "optional exact-source evidence cap policy JSON")
 	maxRequestBytes := flags.Int64("max-request-bytes", collector.DefaultMaxRequestBytes, "maximum request bytes before and after decompression")
 	maxDedupeItems := flags.Int("max-dedupe-items", collector.DefaultMaxDedupeItems, "recent span IDs retained for retry deduplication")
 	if err := flags.Parse(args); err != nil {
@@ -111,6 +114,10 @@ func runCollect(args []string) error {
 	}
 	if *maxRequestBytes > int64(^uint(0)>>1) {
 		return fmt.Errorf("max request bytes exceeds platform limit")
+	}
+	sourceTrust, err := loadSourceTrustPolicy(*trustPolicyPath)
+	if err != nil {
+		return err
 	}
 
 	authToken := ""
@@ -146,6 +153,7 @@ func runCollect(args []string) error {
 		Source:           *source,
 		AuthToken:        authToken,
 		SensitiveHMACKey: sensitiveHMACKey,
+		SourceTrust:      sourceTrust,
 		MaxRequestBytes:  *maxRequestBytes,
 		MaxDedupeItems:   *maxDedupeItems,
 	})
@@ -268,6 +276,7 @@ func runScan(args []string) error {
 	bomOut := flags.String("bom-out", "", "optional CycloneDX JSON")
 	source := flags.String("source", "", "fallback source name")
 	hmacKeyPath := flags.String("sensitive-hmac-key-file", "", "optional key for privacy-preserving prompt fingerprints")
+	trustPolicyPath := flags.String("source-trust-policy", "", "optional exact-source evidence cap policy JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -282,6 +291,12 @@ func runScan(args []string) error {
 	if err != nil {
 		return err
 	}
+	sourceTrust, err := loadSourceTrustPolicy(*trustPolicyPath)
+	if err != nil {
+		return err
+	}
+	trusted := sourceTrust.Apply(observations)
+	observations = trusted.Observations
 	var options normalize.Options
 	if *hmacKeyPath != "" {
 		options.SensitiveHMACKey, err = os.ReadFile(*hmacKeyPath)
@@ -302,7 +317,25 @@ func runScan(args []string) error {
 		}
 	}
 	fmt.Fprintf(os.Stderr, "generated %d nodes and %d relationships\n", len(graph.Nodes), len(graph.Edges))
+	if trusted.Downgraded > 0 {
+		fmt.Fprintf(os.Stderr, "capped %d evidence claim(s) by source trust policy\n", trusted.Downgraded)
+	}
 	return nil
+}
+
+func loadSourceTrustPolicy(path string) (trust.Policy, error) {
+	if path == "" {
+		return trust.Policy{}, nil
+	}
+	data, err := readFileOrStdin(path)
+	if err != nil {
+		return trust.Policy{}, err
+	}
+	parsed, err := trust.Parse(data)
+	if err != nil {
+		return trust.Policy{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	return parsed, nil
 }
 
 func runExport(args []string) error {

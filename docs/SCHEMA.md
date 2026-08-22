@@ -29,7 +29,25 @@ Unknown attributes remain available to future adapters, but only an allowlisted 
 
 OTLP spans are `observed` by default. The project extension `aiebom.evidence.level` may downgrade an OTLP observation to `declared` or `inferred`; it cannot promote evidence to `verified`. The MCP adapter uses this for content-free capabilities returned by `tools/list`.
 
-Signature-looking OTLP attributes such as `gen_ai.model.signature.verified=true` are untrusted metadata and do not change the evidence level. A compact-input adapter may emit `verified` only after performing verification outside the current normalizer; the built-in OpenSSF Model Signing verifier remains roadmap work.
+Signature-looking OTLP attributes such as `gen_ai.model.signature.verified=true` are untrusted metadata and do not change the evidence level. Compact input is also capped at `observed` by default. A compact-input adapter may retain `verified` only after performing verification outside the current normalizer and only when the operator authorizes its exact source name; the built-in OpenSSF Model Signing verifier remains roadmap work.
+
+## Source trust policy
+
+`scan` and `collect` accept `--source-trust-policy`. The policy is vendor-neutral and contains exact, case-sensitive source names with their maximum evidence authority:
+
+```json
+{
+  "version": "0.1.0",
+  "sources": [
+    {"source": "model-signing-verifier", "maxEvidence": "verified"},
+    {"source": "deployment-config", "maxEvidence": "declared"}
+  ]
+}
+```
+
+Sources without a matching rule have a fixed maximum of `observed`. Rules do not use wildcards, prefixes, framework names, or transport-specific code. A rule can grant `verified` or impose the stricter `observed`, `declared`, or `inferred` maximum. Invalid levels, unknown fields, unsupported policy versions, empty sources, duplicate exact-source rules, and trailing JSON values are rejected before collection starts.
+
+The cap runs before normalization and before unresolved spans can enter the cross-batch correlation queue. When continuous collection loads an existing graph, it also reapplies the current policy to node, edge, and field-candidate summaries and recomputes selected fields, so pre-v0.9 untrusted verification does not survive a receiver restart. The cap changes only evidence levels; it does not copy raw input or add attributes. Source labels remain producer-controlled unless the surrounding adapter or transport authenticates them, so operators must not grant `verified` to a name that arbitrary producers can spoof.
 
 ## MCP identity and capability bridge
 
@@ -58,7 +76,7 @@ When an `invoke_agent` span summarizes a requested model and a concrete model op
 
 ## Evidence graph
 
-The graph contains:
+The v0.9 graph has the same structural fields as v0.8; the version change records the new ingestion trust contract. The graph contains:
 
 - `schemaVersion`, `generatedAt`, `source`, and privacy metadata;
 - stable `nodes` for agents, models, tools, MCP servers, prompts, and data sources;

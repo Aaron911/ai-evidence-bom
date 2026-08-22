@@ -387,6 +387,94 @@ gap is rejected, already solved by another accepted change, or the reference
 cannot credibly demonstrate the convention; record that result before resuming
 peer metadata work.
 
+## v0.9 source trust-cap calibration — 2026-08-22
+
+This is an unreleased product/schema candidate. It does not publish the local
+OpenTelemetry lifecycle patch or claim any new framework compatibility grade.
+
+### Uncertainty tested
+
+Can a malicious compact adapter obtain `verified` authority solely by
+self-reporting its evidence level, or can a vendor-neutral operator policy cap
+that claim while preserving a separately authorized verifier and deterministic
+field selection?
+
+### Evidence gained
+
+- Every unmatched source now has a fixed maximum of `observed`. Only an exact,
+  case-sensitive source rule can preserve `verified`; the same rule model can
+  impose stricter `observed`, `declared`, or `inferred` caps.
+- A deterministic fixture combines an authorized verified `weights-v1` claim
+  with a newer malicious self-reported verified `weights-v2` claim. The latter
+  becomes observed, the trusted value remains selected, and both values remain
+  visible as a conflict.
+- Trusted-first and malicious-first permutations produce deeply equal nodes,
+  so source policy does not reintroduce arrival-order precedence.
+- `scan` and the live receiver share the same cap. The receiver applies it
+  before cross-batch pending correlation and reports unique reductions through
+  `evidenceDowngrades`.
+- Persisted graphs are recapped on receiver startup across node, edge, and
+  field-candidate summaries, then field selections are recomputed. A pre-v0.9
+  untrusted verified claim therefore does not silently survive a restart.
+- Strict policy parsing rejects unsupported versions, unknown fields, invalid
+  levels, empty or duplicate exact-source rules, and trailing JSON.
+- Synthetic input-message and tool-argument markers do not reach the graph.
+  The policy introduces no new content retention or identity inference.
+- The public OpenTelemetry issue `#437` remained open without a visible
+  actionable maintainer conclusion at the start of the iteration, so no MCP
+  alias or lifecycle product change was mixed into this work.
+- The security gate found six reachable standard-library vulnerabilities in
+  Go 1.26.5, all fixed in 1.26.6. The minimum toolchain was raised to 1.26.6;
+  `govulncheck@v1.6.0` then reported no vulnerabilities.
+- Go 1.26.6 race tests, vet, build, CycloneDX schema positive/negative checks,
+  Agent Framework live capture, Dify instrumentation execution, MCP runtime,
+  and a real v0.9 canonical sign/verify passed locally. Full Dify could not run
+  locally because Docker is unavailable; remote validation is still required.
+
+### Decision
+
+**Continue with the narrower verified-evidence claim.** This closes the known
+path where compact input could label itself verified and silently win field
+precedence. It directly strengthens the project's evidence credibility without
+adding a framework adapter, dashboard, vulnerability feed, or sensitive
+content collection.
+
+`verified` now means both that a verifier adapter claims independent support
+and that the operator has granted that exact source the authority to make the
+claim. It still does not mean the source identity is cryptographically proven,
+the component is safe, or hosted model weights were independently verified.
+
+### Risks and pivot signals
+
+- Source names in compact documents and OTLP resources remain self-reported
+  labels. A malicious producer that can use an authorized name can still spoof
+  authority unless the surrounding process or transport binds that name to an
+  authenticated identity.
+- The default observed cap prevents self-promotion to verified but does not
+  prove that arbitrary compact metadata came from a runtime event. Operators
+  should use stricter source rules for configuration-only adapters.
+- Policy files are trusted local configuration. Their access control, review,
+  and distribution are outside the evidence graph.
+- Candidate values remain cardinality-unbounded. If real long-lived collection
+  shows material growth, design an order-independent bound before adding more
+  retained field types.
+- If operators cannot identify and control verifier adapters, narrow or remove
+  externally supplied verified evidence rather than adding more attestation
+  formats on an unauthenticated boundary.
+
+### Next smallest falsifiable test
+
+Bind one live-receiver source to a source-specific authenticated credential
+outside the OTLP payload. A producer using the trusted source label with the
+wrong credential must be rejected or capped, while the correctly authenticated
+verifier retains its configured authority; no credential may enter the graph,
+logs, pending queue, or BOM.
+
+The test fails if authority still depends only on `service.name` or another
+self-reported attribute, if credential rotation changes graph identity, or if
+the design requires framework-specific code. Until this boundary is proven,
+do not broaden verified attestation formats.
+
 ## Release calibration template
 
 For each later release, append a dated section containing:

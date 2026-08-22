@@ -28,6 +28,7 @@ import (
 
 	inputpkg "github.com/Aaron911/ai-evidence-bom/internal/input"
 	"github.com/Aaron911/ai-evidence-bom/internal/model"
+	"github.com/Aaron911/ai-evidence-bom/internal/trust"
 )
 
 const tracePayload = `{
@@ -409,6 +410,118 @@ func TestReceiverServesOTLPGRPCWithAuthAndDeduplication(t *testing.T) {
 	}
 	if stats.FailedRequests != 0 {
 		t.Fatalf("authentication failures should not be counted as ingest failures: %+v", stats)
+	}
+}
+
+func TestReceiverAppliesExactSourceEvidenceCap(t *testing.T) {
+	receiver, err := New(Config{
+		GraphOut: filepath.Join(t.TempDir(), "evidence.json"),
+		SourceTrust: trust.Policy{
+			Version: trust.PolicyVersion,
+			Sources: []trust.SourceRule{{
+				Source: "capped-runtime", MaxEvidence: model.EvidenceDeclared,
+			}},
+		},
+		Now: func() time.Time { return time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := receiver.accept([]inputpkg.Observation{{
+		Timestamp: time.Date(2026, 8, 22, 11, 0, 0, 0, time.UTC),
+		Level:     model.EvidenceObserved,
+		Source:    "capped-runtime",
+		Attributes: map[string]string{
+			"service.name":         "review-agent",
+			"gen_ai.request.model": "model-a",
+		},
+	}}, "receiver"); err != nil {
+		t.Fatal(err)
+	}
+	if len(receiver.graph.Nodes) != 2 {
+		t.Fatalf("nodes=%d want=2", len(receiver.graph.Nodes))
+	}
+	for _, node := range receiver.graph.Nodes {
+		if node.Evidence.Level != model.EvidenceDeclared {
+			t.Fatalf("node evidence=%q want=declared: %+v", node.Evidence.Level, node)
+		}
+	}
+	if receiver.stats.EvidenceDowngrades != 1 {
+		t.Fatalf("evidenceDowngrades=%d want=1", receiver.stats.EvidenceDowngrades)
+	}
+}
+
+func TestReceiverRejectsInvalidSourceTrustPolicy(t *testing.T) {
+	_, err := New(Config{
+		GraphOut: filepath.Join(t.TempDir(), "evidence.json"),
+		SourceTrust: trust.Policy{
+			Version: "invalid",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "source trust policy") {
+		t.Fatalf("invalid source trust policy error=%v", err)
+	}
+}
+
+func TestReceiverCapsEvidenceBeforePendingCorrelation(t *testing.T) {
+	receiver, err := New(Config{
+		GraphOut: filepath.Join(t.TempDir(), "evidence.json"),
+		SourceTrust: trust.Policy{
+			Version: trust.PolicyVersion,
+			Sources: []trust.SourceRule{{
+				Source: "capped-runtime", MaxEvidence: model.EvidenceDeclared,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := receiver.accept([]inputpkg.Observation{{
+		Level:        model.EvidenceObserved,
+		Source:       "capped-runtime",
+		TraceID:      "trace-1",
+		SpanID:       "child",
+		ParentSpanID: "missing-parent",
+		Attributes:   map[string]string{"gen_ai.request.model": "model-a"},
+	}}, "receiver"); err != nil {
+		t.Fatal(err)
+	}
+	if len(receiver.pending) != 1 || receiver.pending[0].Level != model.EvidenceDeclared {
+		t.Fatalf("pending evidence was not capped: %+v", receiver.pending)
+	}
+	if receiver.stats.EvidenceDowngrades != 1 || receiver.stats.PendingSpans != 1 {
+		t.Fatalf("unexpected stats: %+v", receiver.stats)
+	}
+}
+
+func TestReceiverRecapsPersistedVerifiedEvidenceOnLoad(t *testing.T) {
+	graphPath := filepath.Join(t.TempDir(), "evidence.json")
+	persisted := model.Graph{
+		SchemaVersion: "0.8.0",
+		Nodes: []model.Node{{
+			ID: "model:1", Type: "model", Name: "model-a",
+			Evidence: model.EvidenceSummary{
+				Level: model.EvidenceVerified, Sources: []string{"untrusted-old-adapter"}, ObservationCount: 1,
+			},
+		}},
+		Edges: []model.Edge{},
+	}
+	data, err := json.Marshal(persisted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(graphPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	receiver, err := New(Config{GraphOut: graphPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receiver.graph.Nodes) != 1 || receiver.graph.Nodes[0].Evidence.Level != model.EvidenceObserved {
+		t.Fatalf("persisted untrusted verification survived reload: %+v", receiver.graph.Nodes)
+	}
+	if receiver.graph.SchemaVersion != model.SchemaVersion || receiver.graph.Metadata["normalizer.version"] != model.SchemaVersion {
+		t.Fatalf("persisted graph contract was not upgraded: %+v", receiver.graph)
 	}
 }
 

@@ -33,7 +33,7 @@ Exit gate: live exports from two unrelated frameworks produce the same core grap
 
 - [ ] Integrate OpenSSF Model Signing verification for local model artifacts
 - [x] Add field-level evidence candidates, deterministic evidence-strength precedence, and explicit conflict policy
-- [ ] Add operator-defined trust rules that cap the evidence level allowed from each source
+- [x] Add operator-defined trust rules that cap the evidence level allowed from each source
 - [x] Add bounded graph-path policies and MCP capability escalation detection
 - [x] Generate signed, reproducible evidence snapshots with an explicit RFC 8785-based canonical representation
 - [x] Validate CycloneDX output against the checksum-pinned official schema in CI, including a negative control

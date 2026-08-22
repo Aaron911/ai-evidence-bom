@@ -1,6 +1,6 @@
 # Runtime OTLP receiver
 
-The `collect` command turns AI Evidence BOM into a small dual-protocol OTLP trace backend. Accepted spans are normalized and merged into a durable evidence graph and optional CycloneDX snapshots. A child whose parent has not arrived yet waits in a bounded metadata-only queue so identity can be correlated across export requests. JSON and protobuf inputs share one metadata allowlist and produce the same graph contract.
+The `collect` command turns AI Evidence BOM into a small dual-protocol OTLP trace backend. Accepted spans pass through exact-source evidence caps, then are normalized and merged into a durable evidence graph and optional CycloneDX snapshots. A child whose parent has not arrived yet waits in a bounded metadata-only queue so identity can be correlated across export requests. JSON and protobuf inputs share one metadata allowlist and produce the same graph contract.
 
 ## Start locally
 
@@ -86,12 +86,13 @@ The built-in servers do not terminate TLS. Plaintext is intended only for loopba
 - The same limit bounds unresolved child spans and retained trace-context entries. If the pending queue reaches the limit, the oldest unresolved metadata is normalized without parent identity rather than growing memory without bound.
 - A child whose parent never arrives remains visible in the `pendingSpans` gauge until it is released by its parent or by queue pressure. Pending context is in memory and resets on restart.
 - Duplicate span retries are acknowledged but do not increase evidence counts, even when a retry changes transport.
+- Sources are capped at `observed` by default. `--source-trust-policy` can apply a stricter source cap or authorize an exact source for `verified`; OTLP parsing itself remains unable to self-promote beyond `observed`.
 - Deduplication state is in memory and resets on restart.
-- An existing graph at `--graph-out` is loaded so evidence history continues after restart.
+- An existing graph at `--graph-out` is loaded so evidence history continues after restart. Current source caps are reapplied to persisted node, edge, and field-candidate summaries before they are served or merged, and field selection is recomputed.
 - Raw OTLP requests are never written to disk.
 
 ## Protocol scope
 
-v0.8 accepts OTLP trace `ExportTraceServiceRequest` messages over HTTP/JSON, HTTP/protobuf, and gRPC/protobuf. Unknown protobuf fields are discarded for forward compatibility. Resource attributes, instrumentation scope provenance, span attributes, names, timestamps, trace IDs, span IDs, and parent span IDs pass through one normalizer.
+v0.9 accepts OTLP trace `ExportTraceServiceRequest` messages over HTTP/JSON, HTTP/protobuf, and gRPC/protobuf. Unknown protobuf fields are discarded for forward compatibility. Resource attributes, instrumentation scope provenance, span attributes, names, timestamps, trace IDs, span IDs, and parent span IDs pass through one normalizer. `/v1/stats` includes `evidenceDowngrades`, counting unique accepted observations whose evidence was reduced by source policy.
 
 Metrics, logs, and profiles are intentionally not registered or exposed. Partial-success responses are not currently generated: a syntactically valid request is accepted as a whole, while malformed input or persistence failure returns the appropriate HTTP status or gRPC status code.
