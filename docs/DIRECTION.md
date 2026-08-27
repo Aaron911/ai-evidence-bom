@@ -497,7 +497,7 @@ Can one protected live-receiver source be bound to a source-specific credential 
 - Source credentials cannot read graph, BOM, or stats endpoints protected by the global credential. Unit and live CLI controls found no raw credential in HTTP rejection responses, graphs, BOMs, pending observations, or receiver logs.
 - Authentication deliberately does not promote OTLP above `observed`: producer identity is not evidence that an assertion is true or a component is safe.
 - Go 1.26.6 race tests, vet, build, pinned vulnerability scanning, CycloneDX schema positive/negative checks, a real source-authenticated CLI receiver, Microsoft Agent Framework live capture, and the official MCP Go SDK runtime check passed locally.
-- The isolated Dify check produced no product failure but could not complete because its pinned GitHub sparse fetch stalled. Docker is unavailable for the full Dify stack; both remain required remote gates after push.
+- The isolated Dify check produced no local product failure but could not complete because its pinned GitHub sparse fetch stalled, and Docker is unavailable locally. Implementation commit `305dd7b` subsequently passed GitHub Actions [`ci #22`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/33038176470), including isolated Dify, and the complete Dify workflow [`#12`](https://github.com/Aaron911/ai-evidence-bom/actions/runs/33038176467).
 
 ### Decision
 
