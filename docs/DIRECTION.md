@@ -480,6 +480,45 @@ self-reported attribute, if credential rotation changes graph identity, or if
 the design requires framework-specific code. Until this boundary is proven,
 do not broaden verified attestation formats.
 
+## v0.10 live source-authentication calibration — 2026-08-27
+
+This is an unreleased product/schema candidate. It does not add a vulnerability scanner, publish the local OpenTelemetry lifecycle patch, or claim a new framework compatibility grade.
+
+### Uncertainty tested
+
+Can one protected live-receiver source be bound to a source-specific credential outside OTLP so a forged `service.name` cannot obtain its authority, while correct and rotation credentials preserve a stable source and no credential reaches evidence state?
+
+### Evidence gained
+
+- OpenTelemetry Specification v1.60.0 defines configurable headers for both OTLP HTTP and gRPC exporters. A standard `Authorization` header can therefore carry the credential without changing OTLP or adding framework-specific transport code.
+- A strict versioned policy maps SHA-256 digests of random credentials to exact sources. Multiple credentials can map to the same source for rotation, but one digest cannot map to multiple sources.
+- A correct credential replaces payload-derived evidence authority with the bound source. A wrong credential is unauthenticated; a global credential attempting to self-report a protected source is rejected before deduplication and pending correlation.
+- Live trust rules above `observed` cannot start without an exact source-authentication binding. Global/read and source/ingest credential roles cannot reuse the same token.
+- Source credentials cannot read graph, BOM, or stats endpoints protected by the global credential. Unit and live CLI controls found no raw credential in HTTP rejection responses, graphs, BOMs, pending observations, or receiver logs.
+- Authentication deliberately does not promote OTLP above `observed`: producer identity is not evidence that an assertion is true or a component is safe.
+- Go 1.26.6 race tests, vet, build, pinned vulnerability scanning, CycloneDX schema positive/negative checks, a real source-authenticated CLI receiver, Microsoft Agent Framework live capture, and the official MCP Go SDK runtime check passed locally.
+- The isolated Dify check produced no product failure but could not complete because its pinned GitHub sparse fetch stalled. Docker is unavailable for the full Dify stack; both remain required remote gates after push.
+
+### Decision
+
+**Continue, with the evidence-layer boundary intact.** v0.10 closes the precise spoofing gap left by v0.9: an exact source name can now be protected by a credential outside the telemetry payload. It does not turn static bearer possession into attestation, introduce a private Agent protocol, or broaden content retention.
+
+This strengthens the foundation needed before accepting external verification or vulnerability findings. Building a generic MCP/Skill scanner now would duplicate specialist tools and move away from the project's differentiator: correlating runtime inventory, declarations, verification, drift, and policy with explicit provenance.
+
+### Risks and pivot signals
+
+- Static bearer tokens have no intrinsic expiry, audience, revocation service, or hardware identity. Suspected exposure requires removing or rotating the digest; remote transport still requires external TLS.
+- A correctly authenticated producer may still lie. If operators interpret authentication as safety or verification despite documentation and evidence levels, rename or further constrain the feature before adding attestation formats.
+- Offline compact input remains an operator-controlled file boundary. Do not describe `scan` source labels as authenticated.
+- Source bindings are exact configuration. If deployments need dynamic workload identity at scale, test mTLS or a trusted proxy assertion as a separate bounded mechanism rather than adding framework branches.
+- If external scanner findings cannot be joined to graph components using stable identity and artifact digests, do not fall back to display-name matching or build a second scanner inside the core.
+
+### Next smallest falsifiable test
+
+Ingest one external SARIF 2.1.0 result for a deliberately vulnerable MCP server or Skill fixture and attach it to an already discovered component only when stable artifact identity and digest agree. Preserve tool, rule, severity, and evidence provenance; make one policy fail; retain no source code or finding payload beyond an explicit metadata allowlist.
+
+The test fails if mapping requires a framework-specific name heuristic, if a mismatched digest still attaches, if scanner output is relabeled as built-in verification, or if the implementation starts duplicating vulnerability detection. First verify the chosen external tool's actual export contract; keep the core scanner-agnostic.
+
 ## Release calibration template
 
 For each later release, append a dated section containing:

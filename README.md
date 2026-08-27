@@ -6,7 +6,7 @@ It answers a narrower question than an ordinary scanner:
 
 > What models, agents, tools, MCP servers, prompts, and data sources were actually observed at runtime, and how did that set change?
 
-The project is an experimental v0.9 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
+The project is an experimental v0.10 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
 
 ## Current capabilities
 
@@ -17,7 +17,7 @@ The project is an experimental v0.9 validation build. It is not a compliance cer
 - Includes source-derived contracts plus executable compatibility checks for Dify and Microsoft Agent Framework.
 - Uses MCP protocol discovery and runtime telemetry together to distinguish declared server capabilities from observed tool calls.
 - Records evidence as `inferred`, `declared`, `observed`, or `verified`.
-- Caps every source at `observed` by default and preserves `verified` only for exact source names authorized by an operator policy.
+- Caps every source at `observed` by default, preserves `verified` only for exact operator-authorized sources, and can bind protected live sources to ingest-only credentials outside OTLP.
 - Retains field-level evidence for versions, digests, and properties, resolves them independently of arrival order, and exposes competing values as conflicts.
 - Exports CycloneDX 1.7 JSON with AI/ML component types and relationships, validated in CI against the checksum-pinned official schema.
 - Compares two evidence graphs to find new, removed, and changed capabilities.
@@ -25,7 +25,7 @@ The project is an experimental v0.9 validation build. It is not a compliance cer
 - Can fail policy when conflicting field evidence exists, even when the strongest selected value did not change.
 - Signs exact graph/BOM bytes or RFC 8785-canonical evidence-graph identities with Ed25519 and detects tampering.
 - Defaults to metadata-only processing. Prompt bodies and tool arguments are never retained.
-- Bounds live request sizes, supports gzip, optionally authenticates with a bearer token, and deduplicates recent span retries.
+- Bounds live request sizes, supports gzip, separates global/read access from source-specific ingest credentials, and deduplicates recent span retries.
 
 ## Quick start
 
@@ -162,7 +162,21 @@ Compact input cannot grant itself `verified` authority. Without a source trust p
 
 Rules match the complete source name exactly and case-sensitively; there are no wildcard or prefix grants. A rule can also reduce a source to `observed`, `declared`, or `inferred`. The same flag is available on `collect`, and `/v1/stats` reports `evidenceDowngrades`.
 
-The source name is still a label, not a cryptographic identity. A `verified` grant is sound only when the operator also controls or authenticates the adapter/transport that is allowed to use that name. See the [v0.9 source-trust evidence record](docs/evidence/v0.9.0.md).
+For live collection, any trust grant above `observed` additionally requires `--source-auth-policy`. Its versioned bindings map SHA-256 digests of random bearer tokens to exact source names:
+
+```json
+{
+  "version": "0.1.0",
+  "bindings": [
+    {
+      "source": "model-signing-verifier",
+      "tokenSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
+```
+
+The producer sends the raw token through the standard OTLP `Authorization` header. A valid source token overrides the authority label derived from `service.name`; an unbound producer cannot claim that protected source. Multiple token digests may map to the same source during rotation, and source credentials cannot read graph/BOM/stat endpoints. Authentication identifies the configured producer but does not make OTLP evidence `verified` or prove safety. See [runtime source authentication](docs/RUNTIME_RECEIVER.md#bind-a-live-producer-to-an-evidence-source), the [v0.9 source-trust record](docs/evidence/v0.9.0.md), and the [v0.10 source-authentication record](docs/evidence/v0.10.0.md).
 
 ## Evidence levels
 
@@ -171,7 +185,7 @@ The source name is still a label, not a cryptographic identity. A `verified` gra
 | `inferred` | Derived by a heuristic and not directly asserted by the source. |
 | `declared` | Present in configuration or supplied metadata. |
 | `observed` | Seen in a runtime event or trace. |
-| `verified` | Supplied by a separately controlled non-OTLP verifier adapter whose exact source name is authorized by operator policy; built-in model-artifact verification is not implemented yet. |
+| `verified` | Supplied by a separately controlled non-OTLP verifier adapter whose exact source is authorized by operator policy and, for live transport, authenticated outside the payload; built-in model-artifact verification is not implemented yet. |
 
 Higher evidence does not mean that a component is safe. It means only that its identity has stronger support.
 
@@ -183,20 +197,20 @@ The reproducible conflict fixture and its positive, negative, and migration cont
 
 ```text
 OTLP/HTTP JSON or protobuf ──┐
-OTLP/gRPC protobuf ──────────┼──> live receiver ──┐
-                            │                    │
-OTLP JSON files / declarations ──────────────────┤
-                                                 v
-                                      source trust caps
-                                                 |
-                                                 v
-                                      evidence normalizer
-                                                 |
-                                                 v
-                                      vendor-neutral graph
-                                          |          |          |
-                                          v          v          v
-                                    CycloneDX      diff       policy/sign
+OTLP/gRPC protobuf ──────────┼──> live receiver ──> source authentication ──┐
+                                                                           │
+OTLP JSON files / declarations ──> scan ───────────────────────────────────┤
+                                                                           v
+                                                                source trust caps
+                                                                           |
+                                                                           v
+                                                                evidence normalizer
+                                                                           |
+                                                                           v
+                                                                vendor-neutral graph
+                                                                    |      |      |
+                                                                    v      v      v
+                                                              CycloneDX  diff  policy/sign
 ```
 
 The internal graph is the source of truth. Export formats are adapters so the core is not coupled to one BOM standard.
@@ -252,7 +266,7 @@ See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for exact framework coverage 
 This project does not currently:
 
 - capture traffic from closed-source clients without instrumentation;
-- ingest OTLP metrics, logs, or profiles; v0.9 deliberately accepts traces only;
+- ingest OTLP metrics, logs, or profiles; v0.10 deliberately accepts traces only;
 - make the official MCP SDK emit OTLP automatically; the v0.7 live check installs application instrumentation around its real SDK calls;
 - trust MCP tool descriptions, schemas, or annotations as proof of safe behavior;
 - prove which weights a hosted model provider actually served;

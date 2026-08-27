@@ -1,0 +1,9 @@
+{
+  "version": "0.1.0",
+  "bindings": [
+    {
+      "source": "fixture-signature-verifier",
+      "tokenSha256": "d63ca837e58a59ee1817ee24e43c4dab48ddd6c4ea376156ff817eed7bbd4d1a"
+    }
+  ]
+}

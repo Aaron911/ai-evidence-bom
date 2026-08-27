@@ -11,9 +11,9 @@ Compatibility claims are evidence-graded. A green source contract does not imply
 | Live capture | A framework runtime has exported a trace through a standard OTLP transport and the resulting graph has been verified. |
 | Production validated | An authorized non-demo workload has run long enough to exercise relevant paths and operational limits. |
 
-v0.9 retains the **live capture** grades established for the Microsoft Agent Framework core path, a complete Dify application workflow, and one official MCP Go SDK stdio client/server path. None is production validated. Coverage remains limited to the paths described below.
+v0.10 retains the **live capture** grades established for the Microsoft Agent Framework core path, a complete Dify application workflow, and one official MCP Go SDK stdio client/server path. None is production validated. Coverage remains limited to the paths described below.
 
-The v0.8 schema changes merge semantics rather than adding a framework claim: versions, digests, and allowlisted properties retain source-specific candidates, and stronger evidence wins independently of arrival order. v0.9 adds an ingestion trust boundary: sources default to at most observed, and only an exact operator-authorized source can retain verified evidence. Neither change upgrades a framework's evidence grade or makes an untrusted telemetry producer a verifier.
+The v0.8 schema changes merge semantics rather than adding a framework claim: versions, digests, and allowlisted properties retain source-specific candidates, and stronger evidence wins independently of arrival order. v0.9 adds source evidence caps. v0.10 binds protected live sources to ingest-only credentials carried through standard OTLP HTTP/gRPC headers. These changes do not upgrade any framework's evidence grade, make OTLP claims verified, or add framework-specific authentication code.
 
 ## v0.6 matrix
 

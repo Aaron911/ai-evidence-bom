@@ -15,7 +15,7 @@
 4. Policy authors are trusted to define organizational intent.
 5. Hosted model providers remain outside the verifier's control.
 
-## Addressed through v0.8
+## Addressed through v0.10
 
 - Evidence provenance is explicit rather than collapsing declarations and observations.
 - Prompt and tool content is not retained.
@@ -42,16 +42,21 @@
 - Every source defaults to a maximum evidence level of observed. Only an exact, case-sensitive operator rule can preserve verified evidence, and source rules can impose stricter caps.
 - Source trust policies reject unknown fields, invalid levels, unsupported versions, empty or duplicate source rules, and trailing JSON before ingestion begins.
 - A live receiver reapplies current source caps to persisted node, edge, and field-candidate summaries, preventing pre-v0.9 untrusted verification from silently surviving restart.
+- Live HTTP and gRPC source credentials are carried outside OTLP and bind directly to exact evidence sources, so `service.name` is no longer sufficient to impersonate a protected source.
+- A request using only the global receiver token cannot assert a source protected by a source credential; it is rejected before deduplication or pending correlation, preventing an unbound claim from poisoning retry state.
+- Source authentication policies strictly validate versioned, unique SHA-256 credential digests. Presented tokens must contain at least 32 bytes, multiple rotation credentials may retain one stable source identity, and global/read credentials cannot be reused as source credentials.
+- Source credentials authorize ingestion only. They cannot read the evidence graph, BOM, or receiver statistics when those endpoints are protected by the global token.
 
 ## Known limitations
 
 - An observed trace proves only that an instrumented component reported an event; it does not prove the event is truthful.
-- Exact source matching is authorization policy, not source authentication. Compact documents and OTLP resources can self-report source labels; a verified grant is sound only when the surrounding adapter identity or transport is separately controlled or authenticated. Independent built-in OpenSSF Model Signing verification is planned.
+- Source authentication proves possession of a static bearer credential, not that telemetry is truthful or that a component is safe. Credentials currently have no intrinsic expiry, audience, or hardware-backed identity; rotate or remove policy bindings after suspected exposure. Independent built-in OpenSSF Model Signing verification is still planned.
+- Source authentication applies to the live `collect` transport. Compact `scan` documents remain operator-supplied files whose source labels are not authenticated by this mechanism.
 - `scan` input files are loaded into memory and do not yet have a configurable size limit; live collection is bounded.
 - The built-in HTTP and gRPC servers do not terminate TLS. Remote use requires a trusted TLS proxy and access controls.
 - Retry deduplication is bounded and in-memory, so its history resets on restart and very old duplicates may be counted again.
 - A sampled-out or missing parent can leave child metadata pending until queue pressure; monitor `pendingSpans`. Pending context is not persisted across restarts.
-- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.8 protocol scope.
+- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.10 protocol scope.
 - There is no sandbox around input parsing.
 - Hosted model aliases and weights cannot be independently verified.
 - Exact-byte signing remains the default and is formatting-sensitive. Canonical signing is opt-in and currently accepts AI Evidence BOM graph JSON only; it does not implement CycloneDX JSF/JWS or canonicalize arbitrary files.

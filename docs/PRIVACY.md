@@ -2,7 +2,7 @@
 
 AI telemetry may contain source code, credentials, personal data, system prompts, retrieved documents, tool parameters, and model responses. The project therefore uses a metadata-only default.
 
-## Never retained by the v0.9 normalizer
+## Never retained by the v0.10 normalizer
 
 - prompt and completion bodies;
 - tool call arguments and results;
@@ -21,6 +21,8 @@ Field conflict tracking retains distinct historical values for versions, digests
 
 Source trust policies contain only exact source labels and maximum evidence levels. Applying a cap changes the in-memory evidence level before normalization; it does not retain the original higher claim, add input fields to the graph, or inspect prompt/model/tool content. Source labels can still reveal operational names and should be protected as evidence metadata.
 
+Source authentication policies contain exact source labels and SHA-256 digests of randomly generated, high-entropy bearer credentials. Raw source credentials exist only in the producer and receiver request/authentication path: they are not copied into observations, logs, graphs, BOMs, stats, or pending correlation state. A digest is still authentication configuration and must be access-controlled; it must not be used as a substitute for password hashing when credentials are human-chosen or low entropy.
+
 ## Prompt change detection
 
 Without an explicit `--sensitive-hmac-key-file`, prompt content is neither stored nor fingerprinted. When a key is supplied, the normalizer writes only an HMAC-SHA-256 fingerprint and discards the content. The same protected key must be reused to compare future scans.
@@ -29,7 +31,7 @@ The key should be random, at least 32 bytes, stored separately from evidence fil
 
 ## Live receiver behavior
 
-The receiver parses OTLP/HTTP JSON, OTLP/HTTP protobuf, and OTLP/gRPC requests in memory, extracts the same allowlisted metadata from every transport, and discards the raw message. It never writes raw telemetry to disk. Evidence graph and CycloneDX outputs are replaced atomically so readers do not observe partially written JSON.
+The receiver authenticates OTLP/HTTP and OTLP/gRPC bearer headers before parsing, never logs the header, parses accepted JSON or protobuf requests in memory, extracts the same allowlisted metadata from every transport, and discards the raw message. It never writes raw telemetry to disk. Evidence graph and CycloneDX outputs are replaced atomically so readers do not observe partially written JSON.
 
 When a child span arrives before its parent in another export batch, only a bounded allowlist of identity and relationship metadata is queued. Prompt presence is represented as a boolean and, only when configured, a keyed HMAC; prompt/input/output bodies and tool arguments/results are removed before queuing. The current pending count is exposed as `pendingSpans` in `/v1/stats`.
 
@@ -42,6 +44,7 @@ The live endpoints expose metadata that may still be operationally sensitive. Bo
 - A trace ID can become identifying when correlated with another telemetry backend.
 - MCP server and tool names, capability sets, and schema digests can expose operational or security posture.
 - Conflicting historical versions, digests, endpoints, and other allowlisted properties can reveal deployment changes even when they are not selected.
+- A source-authentication digest does not reveal a properly random 32-byte token in practical terms, but theft of the live bearer token permits impersonation until the binding is removed or rotated.
 - Ed25519 signatures provide integrity and origin authentication, not confidentiality.
 - Canonical signing does not redact additional data. It signs every field already retained in the evidence graph, so access controls and retention rules still apply to the graph and its metadata.
 

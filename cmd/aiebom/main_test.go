@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +29,27 @@ func TestIsLoopbackListen(t *testing.T) {
 		if got := isLoopbackListen(test.address); got != test.want {
 			t.Errorf("isLoopbackListen(%q)=%v want=%v", test.address, got, test.want)
 		}
+	}
+}
+
+func TestLoadSourceAuthenticationPolicy(t *testing.T) {
+	token := "cli-source-credential-that-is-longer-than-32-bytes"
+	digest := sha256.Sum256([]byte(token))
+	directory := t.TempDir()
+	policyPath := filepath.Join(directory, "source-auth.json")
+	policyJSON := fmt.Sprintf(`{
+	  "version":"0.1.0",
+	  "bindings":[{"source":"cli-verifier","tokenSha256":"%x"}]
+	}`, digest)
+	if err := os.WriteFile(policyPath, []byte(policyJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := loadSourceAuthenticationPolicy(policyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source, ok := policy.Authenticate(token); !ok || source != "cli-verifier" {
+		t.Fatalf("loaded policy source=%q ok=%v", source, ok)
 	}
 }
 

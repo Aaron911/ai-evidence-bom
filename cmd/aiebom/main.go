@@ -27,6 +27,7 @@ import (
 	"github.com/Aaron911/ai-evidence-bom/internal/normalize"
 	"github.com/Aaron911/ai-evidence-bom/internal/policy"
 	"github.com/Aaron911/ai-evidence-bom/internal/signing"
+	"github.com/Aaron911/ai-evidence-bom/internal/sourceauth"
 	"github.com/Aaron911/ai-evidence-bom/internal/trust"
 )
 
@@ -34,7 +35,7 @@ const usageText = `AI Evidence BOM
 
 Usage:
   aiebom scan    --input traces.json --graph-out evidence.json [--bom-out bom.cdx.json] [--source-trust-policy trust.json]
-  aiebom collect --graph-out evidence.json [--listen 127.0.0.1:4318] [--grpc-listen 127.0.0.1:4317] [--source-trust-policy trust.json]
+  aiebom collect --graph-out evidence.json [--listen 127.0.0.1:4318] [--grpc-listen 127.0.0.1:4317] [--source-trust-policy trust.json] [--source-auth-policy source-auth.json]
   aiebom export  --input evidence.json --output bom.cdx.json
   aiebom diff    --before old.json --after new.json --output diff.json [--fail-on-change]
   aiebom policy  --input evidence.json --policy policy.json --output report.json
@@ -101,6 +102,7 @@ func runCollect(args []string) error {
 	authTokenPath := flags.String("auth-token-file", "", "optional bearer token file")
 	hmacKeyPath := flags.String("sensitive-hmac-key-file", "", "optional key for privacy-preserving prompt fingerprints")
 	trustPolicyPath := flags.String("source-trust-policy", "", "optional exact-source evidence cap policy JSON")
+	sourceAuthPolicyPath := flags.String("source-auth-policy", "", "optional bearer credential digest to exact-source binding policy JSON")
 	maxRequestBytes := flags.Int64("max-request-bytes", collector.DefaultMaxRequestBytes, "maximum request bytes before and after decompression")
 	maxDedupeItems := flags.Int("max-dedupe-items", collector.DefaultMaxDedupeItems, "recent span IDs retained for retry deduplication")
 	if err := flags.Parse(args); err != nil {
@@ -116,6 +118,10 @@ func runCollect(args []string) error {
 		return fmt.Errorf("max request bytes exceeds platform limit")
 	}
 	sourceTrust, err := loadSourceTrustPolicy(*trustPolicyPath)
+	if err != nil {
+		return err
+	}
+	sourceAuthentication, err := loadSourceAuthenticationPolicy(*sourceAuthPolicyPath)
 	if err != nil {
 		return err
 	}
@@ -153,6 +159,7 @@ func runCollect(args []string) error {
 		Source:           *source,
 		AuthToken:        authToken,
 		SensitiveHMACKey: sensitiveHMACKey,
+		SourceAuth:       sourceAuthentication,
 		SourceTrust:      sourceTrust,
 		MaxRequestBytes:  *maxRequestBytes,
 		MaxDedupeItems:   *maxDedupeItems,
@@ -334,6 +341,21 @@ func loadSourceTrustPolicy(path string) (trust.Policy, error) {
 	parsed, err := trust.Parse(data)
 	if err != nil {
 		return trust.Policy{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	return parsed, nil
+}
+
+func loadSourceAuthenticationPolicy(path string) (sourceauth.Policy, error) {
+	if path == "" {
+		return sourceauth.Policy{}, nil
+	}
+	data, err := readFileOrStdin(path)
+	if err != nil {
+		return sourceauth.Policy{}, err
+	}
+	parsed, err := sourceauth.Parse(data)
+	if err != nil {
+		return sourceauth.Policy{}, fmt.Errorf("read %s: %w", path, err)
 	}
 	return parsed, nil
 }

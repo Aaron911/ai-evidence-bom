@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +30,7 @@ import (
 
 	inputpkg "github.com/Aaron911/ai-evidence-bom/internal/input"
 	"github.com/Aaron911/ai-evidence-bom/internal/model"
+	"github.com/Aaron911/ai-evidence-bom/internal/sourceauth"
 	"github.com/Aaron911/ai-evidence-bom/internal/trust"
 )
 
@@ -264,6 +267,138 @@ func TestReceiverRequiresToken(t *testing.T) {
 	}
 }
 
+func TestReceiverBindsProtectedSourceToCredentialOutsideOTLP(t *testing.T) {
+	directory := t.TempDir()
+	graphPath := filepath.Join(directory, "evidence.json")
+	bomPath := filepath.Join(directory, "bom.json")
+	sourceToken := "source-credential-that-is-longer-than-32-bytes"
+	receiver, err := New(Config{
+		GraphOut:   graphPath,
+		BOMOut:     bomPath,
+		AuthToken:  "global-receiver-token",
+		SourceAuth: sourceAuthPolicy("trusted-verifier", sourceToken),
+		SourceTrust: trust.Policy{
+			Version: trust.PolicyVersion,
+			Sources: []trust.SourceRule{{
+				Source: "trusted-verifier", MaxEvidence: model.EvidenceVerified,
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wrongToken := "wrong-source-credential-that-is-longer-than-32-bytes"
+	request := httptest.NewRequest(http.MethodPost, "/v1/traces", strings.NewReader(tracePayload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+wrongToken)
+	response := httptest.NewRecorder()
+	receiver.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong credential status=%d want=%d", response.Code, http.StatusUnauthorized)
+	}
+	if strings.Contains(response.Body.String(), wrongToken) {
+		t.Fatal("rejected source credential leaked into the HTTP response")
+	}
+
+	forgedPayload := strings.Replace(tracePayload, "review-agent", "trusted-verifier", 1)
+	request = httptest.NewRequest(http.MethodPost, "/v1/traces", strings.NewReader(forgedPayload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer global-receiver-token")
+	response = httptest.NewRecorder()
+	receiver.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("self-reported protected source status=%d want=%d body=%s", response.Code, http.StatusForbidden, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/v1/traces", strings.NewReader(tracePayload))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+sourceToken)
+	response = httptest.NewRecorder()
+	receiver.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("bound source credential status=%d body=%s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodGet, "/v1/evidence", nil)
+	request.Header.Set("Authorization", "Bearer "+sourceToken)
+	response = httptest.NewRecorder()
+	receiver.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("ingest-only source credential read status=%d want=%d", response.Code, http.StatusUnauthorized)
+	}
+	for _, node := range receiver.graph.Nodes {
+		if len(node.Evidence.Sources) != 1 || node.Evidence.Sources[0] != "trusted-verifier" {
+			t.Fatalf("payload source retained authority after credential binding: %+v", node.Evidence)
+		}
+	}
+
+	if err := receiver.acceptAuthenticated([]inputpkg.Observation{{
+		Level:  model.EvidenceVerified,
+		Source: "self-reported-attacker",
+		Attributes: map[string]string{
+			"service.name":         "verification-adapter",
+			"gen_ai.request.model": "verified-model",
+		},
+	}}, "self-reported-attacker", "trusted-verifier"); err != nil {
+		t.Fatal(err)
+	}
+	verified := false
+	for _, node := range receiver.graph.Nodes {
+		if node.Type == "model" && node.Name == "verified-model" {
+			verified = node.Evidence.Level == model.EvidenceVerified &&
+				len(node.Evidence.Sources) == 1 && node.Evidence.Sources[0] == "trusted-verifier"
+		}
+	}
+	if !verified {
+		t.Fatalf("authenticated verifier did not retain configured authority: %+v", receiver.graph.Nodes)
+	}
+
+	for _, path := range []string{graphPath, bomPath} {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if bytes.Contains(data, []byte(sourceToken)) {
+			t.Fatalf("source credential leaked into %s", path)
+		}
+	}
+	pending, err := json.Marshal(receiver.pending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(pending, []byte(sourceToken)) {
+		t.Fatal("source credential leaked into pending correlation state")
+	}
+}
+
+func TestReceiverBindsSourceCredentialOverGRPCMetadata(t *testing.T) {
+	sourceToken := "grpc-source-credential-that-is-longer-than-32-bytes"
+	receiver, err := New(Config{
+		GraphOut:   filepath.Join(t.TempDir(), "evidence.json"),
+		SourceAuth: sourceAuthPolicy("grpc-verifier", sourceToken),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongContext := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		"authorization", "Bearer wrong-grpc-source-credential-longer-than-32-bytes",
+	))
+	if _, err := receiver.Export(wrongContext, protoTraceRequest()); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("wrong gRPC credential error=%v", err)
+	}
+	validContext := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+		"authorization", "Bearer "+sourceToken,
+	))
+	if _, err := receiver.Export(validContext, protoTraceRequest()); err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range receiver.graph.Nodes {
+		if len(node.Evidence.Sources) != 1 || node.Evidence.Sources[0] != "grpc-verifier" {
+			t.Fatalf("gRPC payload source retained authority: %+v", node.Evidence)
+		}
+	}
+}
+
 func TestReceiverAcceptsGzipAndRejectsOversizedPayload(t *testing.T) {
 	var compressed bytes.Buffer
 	writer := gzip.NewWriter(&compressed)
@@ -463,6 +598,33 @@ func TestReceiverRejectsInvalidSourceTrustPolicy(t *testing.T) {
 	}
 }
 
+func TestReceiverRejectsVerifiedTrustWithoutSourceAuthentication(t *testing.T) {
+	_, err := New(Config{
+		GraphOut: filepath.Join(t.TempDir(), "evidence.json"),
+		SourceTrust: trust.Policy{
+			Version: trust.PolicyVersion,
+			Sources: []trust.SourceRule{{
+				Source: "unbound-verifier", MaxEvidence: model.EvidenceVerified,
+			}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "without a source authentication binding") {
+		t.Fatalf("unbound verified source policy error=%v", err)
+	}
+}
+
+func TestReceiverRejectsCredentialReusedForGlobalAndSourceAccess(t *testing.T) {
+	sharedToken := "shared-credential-that-is-longer-than-32-bytes"
+	_, err := New(Config{
+		GraphOut:   filepath.Join(t.TempDir(), "evidence.json"),
+		AuthToken:  sharedToken,
+		SourceAuth: sourceAuthPolicy("verifier", sharedToken),
+	})
+	if err == nil || !strings.Contains(err.Error(), "must not also authenticate source") {
+		t.Fatalf("ambiguous credential error=%v", err)
+	}
+}
+
 func TestReceiverCapsEvidenceBeforePendingCorrelation(t *testing.T) {
 	receiver, err := New(Config{
 		GraphOut: filepath.Join(t.TempDir(), "evidence.json"),
@@ -555,6 +717,16 @@ func protoStringKeyValue(key, value string) *commonpb.KeyValue {
 		Key: key,
 		Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{
 			StringValue: value,
+		}},
+	}
+}
+
+func sourceAuthPolicy(source, token string) sourceauth.Policy {
+	digest := sha256.Sum256([]byte(token))
+	return sourceauth.Policy{
+		Version: sourceauth.PolicyVersion,
+		Bindings: []sourceauth.Binding{{
+			Source: source, TokenSHA256: fmt.Sprintf("%x", digest),
 		}},
 	}
 }

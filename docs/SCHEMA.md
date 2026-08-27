@@ -47,7 +47,29 @@ Signature-looking OTLP attributes such as `gen_ai.model.signature.verified=true`
 
 Sources without a matching rule have a fixed maximum of `observed`. Rules do not use wildcards, prefixes, framework names, or transport-specific code. A rule can grant `verified` or impose the stricter `observed`, `declared`, or `inferred` maximum. Invalid levels, unknown fields, unsupported policy versions, empty sources, duplicate exact-source rules, and trailing JSON values are rejected before collection starts.
 
-The cap runs before normalization and before unresolved spans can enter the cross-batch correlation queue. When continuous collection loads an existing graph, it also reapplies the current policy to node, edge, and field-candidate summaries and recomputes selected fields, so pre-v0.9 untrusted verification does not survive a receiver restart. The cap changes only evidence levels; it does not copy raw input or add attributes. Source labels remain producer-controlled unless the surrounding adapter or transport authenticates them, so operators must not grant `verified` to a name that arbitrary producers can spoof.
+The cap runs before normalization and before unresolved spans can enter the cross-batch correlation queue. When continuous collection loads an existing graph, it also reapplies the current policy to node, edge, and field-candidate summaries and recomputes selected fields, so pre-v0.9 untrusted verification does not survive a receiver restart. The cap changes only evidence levels; it does not copy raw input or add attributes.
+
+## Live source authentication policy
+
+`collect` additionally accepts `--source-auth-policy`. This versioned policy binds SHA-256 digests of high-entropy bearer credentials to exact source names outside the OTLP payload:
+
+```json
+{
+  "version": "0.1.0",
+  "bindings": [
+    {
+      "source": "model-signing-verifier",
+      "tokenSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
+```
+
+Each token digest must be unique. Multiple digests may map to the same source so credentials can overlap during rotation without changing graph identity. Unknown fields, unsupported versions, empty bindings or sources, non-canonical digests, duplicate digests, and trailing JSON are rejected. Presented source credentials must contain at least 32 bytes.
+
+For a correctly authenticated HTTP or gRPC export, the bound source replaces the observation authority label that would otherwise be derived from `service.name`. If a request authenticated only with the global receiver token self-reports a protected source, the whole request is rejected before deduplication, normalization, pending correlation, or persistence. Trust rules above `observed` are rejected at receiver startup unless their exact source is protected by an authentication binding. Source credentials grant ingestion only and do not authorize the evidence, BOM, or stats read endpoints.
+
+This binding authenticates the configured producer, not the truth or safety of its claims. OTLP evidence remains capped at `observed`; source authentication does not turn telemetry into verification. Offline `scan` input remains an operator-controlled file boundary and does not use the live transport policy.
 
 ## MCP identity and capability bridge
 
@@ -76,7 +98,7 @@ When an `invoke_agent` span summarizes a requested model and a concrete model op
 
 ## Evidence graph
 
-The v0.9 graph has the same structural fields as v0.8; the version change records the new ingestion trust contract. The graph contains:
+The v0.10 graph has the same structural fields as v0.9; the version change records the authenticated live-source contract. The graph contains:
 
 - `schemaVersion`, `generatedAt`, `source`, and privacy metadata;
 - stable `nodes` for agents, models, tools, MCP servers, prompts, and data sources;

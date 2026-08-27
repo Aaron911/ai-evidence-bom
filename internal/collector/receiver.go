@@ -28,6 +28,7 @@ import (
 	inputpkg "github.com/Aaron911/ai-evidence-bom/internal/input"
 	"github.com/Aaron911/ai-evidence-bom/internal/model"
 	"github.com/Aaron911/ai-evidence-bom/internal/normalize"
+	"github.com/Aaron911/ai-evidence-bom/internal/sourceauth"
 	"github.com/Aaron911/ai-evidence-bom/internal/trust"
 )
 
@@ -38,7 +39,10 @@ const (
 	mediaTypeProtobuf      = "application/x-protobuf"
 )
 
-var errRequestTooLarge = errors.New("request body exceeds configured limit")
+var (
+	errRequestTooLarge          = errors.New("request body exceeds configured limit")
+	errSourceCredentialRequired = errors.New("source-specific bearer credential required")
+)
 
 type Config struct {
 	GraphOut         string
@@ -46,6 +50,7 @@ type Config struct {
 	Source           string
 	AuthToken        string
 	SensitiveHMACKey []byte
+	SourceAuth       sourceauth.Policy
 	SourceTrust      trust.Policy
 	MaxRequestBytes  int64
 	MaxDedupeItems   int
@@ -102,6 +107,17 @@ func New(config Config) (*Receiver, error) {
 	}
 	if err := config.SourceTrust.Validate(); err != nil {
 		return nil, fmt.Errorf("validate source trust policy: %w", err)
+	}
+	if err := config.SourceAuth.Validate(); err != nil {
+		return nil, fmt.Errorf("validate source authentication policy: %w", err)
+	}
+	if source, matches := config.SourceAuth.Authenticate(config.AuthToken); matches {
+		return nil, fmt.Errorf("global receiver token must not also authenticate source %q", source)
+	}
+	for _, rule := range config.SourceTrust.Sources {
+		if rule.MaxEvidence.Rank() > model.EvidenceObserved.Rank() && !config.SourceAuth.Protects(rule.Source) {
+			return nil, fmt.Errorf("source trust rule %q grants authority above observed without a source authentication binding", rule.Source)
+		}
 	}
 	if config.Source == "" {
 		config.Source = "otlp-http"
@@ -166,7 +182,8 @@ func (receiver *Receiver) handleTraces(response http.ResponseWriter, request *ht
 		writeStatus(response, http.StatusUnsupportedMediaType, "supported Content-Type values are application/json and application/x-protobuf")
 		return
 	}
-	if !receiver.authorized(request) {
+	authenticatedSource, authorized := receiver.authorizedIngestHeader(request.Header.Get("Authorization"))
+	if !authorized {
 		response.Header().Set("WWW-Authenticate", "Bearer")
 		writeOTLPStatus(response, http.StatusUnauthorized, mediaType, codes.Unauthenticated, "missing or invalid bearer token")
 		return
@@ -198,8 +215,12 @@ func (receiver *Receiver) handleTraces(response http.ResponseWriter, request *ht
 		writeOTLPStatus(response, http.StatusBadRequest, mediaType, codes.InvalidArgument, err.Error())
 		return
 	}
-	if err := receiver.accept(observations, source); err != nil {
+	if err := receiver.acceptAuthenticated(observations, source, authenticatedSource); err != nil {
 		receiver.recordFailure()
+		if errors.Is(err, errSourceCredentialRequired) {
+			writeOTLPStatus(response, http.StatusForbidden, mediaType, codes.PermissionDenied, err.Error())
+			return
+		}
 		writeOTLPStatus(response, http.StatusInternalServerError, mediaType, codes.Internal, "persist evidence snapshot: "+err.Error())
 		return
 	}
@@ -212,7 +233,8 @@ func (receiver *Receiver) handleTraces(response http.ResponseWriter, request *ht
 
 // Export implements the OTLP/gRPC TraceService.
 func (receiver *Receiver) Export(ctx context.Context, request *collectortracepb.ExportTraceServiceRequest) (*collectortracepb.ExportTraceServiceResponse, error) {
-	if !receiver.authorizedGRPC(ctx) {
+	authenticatedSource, authorized := receiver.authorizedGRPC(ctx)
+	if !authorized {
 		return nil, grpcstatus.Error(codes.Unauthenticated, "missing or invalid bearer token")
 	}
 	observations, source, err := inputpkg.ParseOTLPProto(request, receiver.config.Source)
@@ -220,8 +242,11 @@ func (receiver *Receiver) Export(ctx context.Context, request *collectortracepb.
 		receiver.recordFailure()
 		return nil, grpcstatus.Error(codes.InvalidArgument, err.Error())
 	}
-	if err := receiver.accept(observations, source); err != nil {
+	if err := receiver.acceptAuthenticated(observations, source, authenticatedSource); err != nil {
 		receiver.recordFailure()
+		if errors.Is(err, errSourceCredentialRequired) {
+			return nil, grpcstatus.Error(codes.PermissionDenied, err.Error())
+		}
 		return nil, grpcstatus.Error(codes.Internal, "persist evidence snapshot: "+err.Error())
 	}
 	return &collectortracepb.ExportTraceServiceResponse{}, nil
@@ -259,7 +284,7 @@ func (receiver *Receiver) authorizedRead(response http.ResponseWriter, request *
 		methodNotAllowed(response, http.MethodGet)
 		return false
 	}
-	if !receiver.authorized(request) {
+	if !receiver.authorizedReadHeader(request.Header.Get("Authorization")) {
 		response.Header().Set("WWW-Authenticate", "Bearer")
 		writeStatus(response, http.StatusUnauthorized, "missing or invalid bearer token")
 		return false
@@ -267,39 +292,95 @@ func (receiver *Receiver) authorizedRead(response http.ResponseWriter, request *
 	return true
 }
 
-func (receiver *Receiver) authorized(request *http.Request) bool {
-	return receiver.authorizedHeader(request.Header.Get("Authorization"))
-}
-
-func (receiver *Receiver) authorizedGRPC(ctx context.Context) bool {
+func (receiver *Receiver) authorizedReadHeader(header string) bool {
 	if receiver.config.AuthToken == "" {
 		return true
 	}
-	values := metadata.ValueFromIncomingContext(ctx, "authorization")
-	for _, value := range values {
-		if receiver.authorizedHeader(value) {
-			return true
+	token, ok := bearerToken(header)
+	return ok && constantTimeTokenEqual(token, receiver.config.AuthToken)
+}
+
+func (receiver *Receiver) authorizedIngestHeader(header string) (string, bool) {
+	if receiver.config.AuthToken == "" && !receiver.config.SourceAuth.Enabled() {
+		return "", true
+	}
+	token, ok := bearerToken(header)
+	if !ok {
+		return "", false
+	}
+	if receiver.config.AuthToken != "" && constantTimeTokenEqual(token, receiver.config.AuthToken) {
+		return "", true
+	}
+	return receiver.config.SourceAuth.Authenticate(token)
+}
+
+func (receiver *Receiver) authorizedGRPC(ctx context.Context) (string, bool) {
+	if receiver.config.AuthToken == "" && !receiver.config.SourceAuth.Enabled() {
+		return "", true
+	}
+	globalAuthorized := false
+	authenticatedSource := ""
+	for _, value := range metadata.ValueFromIncomingContext(ctx, "authorization") {
+		source, authorized := receiver.authorizedIngestHeader(value)
+		if !authorized {
+			continue
 		}
+		if source == "" {
+			globalAuthorized = true
+			continue
+		}
+		if authenticatedSource != "" && authenticatedSource != source {
+			return "", false
+		}
+		authenticatedSource = source
 	}
-	return false
+	if authenticatedSource != "" {
+		return authenticatedSource, true
+	}
+	return "", globalAuthorized
 }
 
-func (receiver *Receiver) authorizedHeader(header string) bool {
-	if receiver.config.AuthToken == "" {
-		return true
-	}
+func bearerToken(header string) (string, bool) {
 	parts := strings.SplitN(strings.TrimSpace(header), " ", 2)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return "", false
+	}
+	token := strings.TrimSpace(parts[1])
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
+func constantTimeTokenEqual(provided, expected string) bool {
+	if len(provided) != len(expected) {
 		return false
 	}
-	provided := strings.TrimSpace(parts[1])
-	if len(provided) != len(receiver.config.AuthToken) {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(provided), []byte(receiver.config.AuthToken)) == 1
+	return subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
 }
 
 func (receiver *Receiver) accept(observations []inputpkg.Observation, source string) error {
+	return receiver.acceptAuthenticated(observations, source, "")
+}
+
+func (receiver *Receiver) acceptAuthenticated(observations []inputpkg.Observation, source, authenticatedSource string) error {
+	bound := append([]inputpkg.Observation(nil), observations...)
+	if authenticatedSource != "" {
+		for index := range bound {
+			bound[index].Source = authenticatedSource
+		}
+		source = authenticatedSource
+	} else {
+		for _, observation := range bound {
+			if receiver.config.SourceAuth.Protects(observation.Source) {
+				return errSourceCredentialRequired
+			}
+		}
+	}
+	return receiver.acceptBound(bound, source)
+}
+
+func (receiver *Receiver) acceptBound(observations []inputpkg.Observation, source string) error {
 	receiver.mu.Lock()
 	defer receiver.mu.Unlock()
 

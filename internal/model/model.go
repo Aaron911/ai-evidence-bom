@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const SchemaVersion = "0.9.0"
+const SchemaVersion = "0.10.0"
 
 const (
 	FieldVersion  = "version"

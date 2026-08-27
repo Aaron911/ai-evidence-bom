@@ -6,7 +6,7 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 
 > 实际运行时观察到了哪些 Agent、模型、工具、MCP Server、Prompt 和数据源，它们后来发生了什么变化？
 
-当前为实验性 v0.9，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
+当前为实验性 v0.10，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
 
 ## 当前能力
 
@@ -17,14 +17,14 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 - 提供 Dify 与 Microsoft Agent Framework 的源码契约和可执行兼容性检查；
 - 结合 MCP 协议发现与运行时遥测，区分“服务端声明可用”与“Agent 实际调用”；
 - 区分 `inferred`、`declared`、`observed`、`verified` 四级证据；
-- 为每个来源设置证据等级上限：默认最高为 `observed`，只有运维策略精确授权的来源才能保留 `verified`；
+- 为每个来源设置证据等级上限：默认最高为 `observed`，只有运维策略精确授权的来源才能保留 `verified`，在线受保护来源还可绑定 OTLP 载荷之外的独立采集凭证；
 - 对版本、摘要和保留属性记录字段级候选证据，确定性选择最强值并显式暴露冲突；
 - 导出 CycloneDX 1.7，并在 CI 中使用校验和固定的官方 Schema 验证；
 - 检测模型、工具、MCP、数据源和权限变化；
 - 使用节点策略和有向图路径策略作为 CI 门禁；
 - 使用 Ed25519 签名并验证精确文件字节，或签名采用 RFC 8785 规范化的证据图身份；
 - 默认只处理元数据，不保存 Prompt、响应、工具参数或工具结果。
-- 对在线请求限制大小，支持 gzip、可选 Bearer Token，并去除近期重复 span。
+- 对在线请求限制大小，支持 gzip，区分全局读取凭证与仅可采集的来源凭证，并去除近期重复 span。
 
 ## 快速体验
 
@@ -73,7 +73,9 @@ compact observation 不能再通过自报把自己升级为 `verified`。如果�
   --graph-out work/conflict.evidence.json
 ```
 
-规则按完整来源名称区分大小写匹配，不支持通配授权，也可以把某个来源进一步限制为 `declared` 或 `inferred`。来源名称本身不是密码学身份；只有当适配器进程或传输通道也由运维方控制或认证时，授予 `verified` 才可信。详见 [v0.9 证据记录](docs/evidence/v0.9.0.md)。
+规则按完整来源名称区分大小写匹配，不支持通配授权，也可以把某个来源进一步限制为 `declared` 或 `inferred`。
+
+在线 `collect` 如果要给某个来源配置高于 `observed` 的权限，还必须通过 `--source-auth-policy` 把随机 Bearer Token 的 SHA-256 摘要绑定到该精确来源。Token 通过 OTLP HTTP/gRPC 都支持的 `Authorization` 请求头发送，不放进 OTLP 载荷；认证成功后，凭证绑定的来源会取代 `service.name` 作为证据权威来源。来源凭证只能写入遥测，不能读取图、BOM 或统计；同一来源可同时绑定新旧 Token 以便轮换。认证只证明“是配置的生产者发来的”，不会把普通 OTLP 自动升级为 `verified`，更不代表组件安全。详见 [在线来源认证](docs/RUNTIME_RECEIVER.md#bind-a-live-producer-to-an-evidence-source)、[v0.9 证据记录](docs/evidence/v0.9.0.md) 与 [v0.10 证据记录](docs/evidence/v0.10.0.md)。
 
 ## 可复现的证据签名
 
@@ -123,7 +125,7 @@ curl --fail-with-body \
 
 同一个 HTTP 地址还接受 `application/x-protobuf`，gRPC 端口实现标准 OTLP `TraceService/Export`。可通过 `GET /healthz` 检查健康状态，并通过 `/v1/evidence`、`/v1/bom`、`/v1/stats` 查看实时结果。
 
-现在可以直接接在 OpenTelemetry Collector 后面：可使用 [OTLP/HTTP Protobuf 配置](examples/otel-collector-http.yaml) 或 [OTLP/gRPC 配置](examples/otel-collector-grpc.yaml)。鉴权、请求限制、TLS 边界和协议范围见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。v0.9 只处理 traces，不接收 metrics、logs 或 profiles。
+现在可以直接接在 OpenTelemetry Collector 后面：可使用 [OTLP/HTTP Protobuf 配置](examples/otel-collector-http.yaml) 或 [OTLP/gRPC 配置](examples/otel-collector-grpc.yaml)。鉴权、请求限制、TLS 边界和协议范围见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。v0.10 只处理 traces，不接收 metrics、logs 或 profiles。
 
 无需模型 API Key 即可运行四项确定性兼容性检查：
 

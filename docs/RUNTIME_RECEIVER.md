@@ -1,6 +1,6 @@
 # Runtime OTLP receiver
 
-The `collect` command turns AI Evidence BOM into a small dual-protocol OTLP trace backend. Accepted spans pass through exact-source evidence caps, then are normalized and merged into a durable evidence graph and optional CycloneDX snapshots. A child whose parent has not arrived yet waits in a bounded metadata-only queue so identity can be correlated across export requests. JSON and protobuf inputs share one metadata allowlist and produce the same graph contract.
+The `collect` command turns AI Evidence BOM into a small dual-protocol OTLP trace backend. Accepted spans pass through source authentication and exact-source evidence caps, then are normalized and merged into a durable evidence graph and optional CycloneDX snapshots. A child whose parent has not arrived yet waits in a bounded metadata-only queue so identity can be correlated across export requests. JSON and protobuf inputs share one metadata allowlist and produce the same graph contract.
 
 ## Start locally
 
@@ -77,7 +77,51 @@ Loopback is the safe default. Binding either listener to a non-loopback address 
 
 HTTP clients send `Authorization: Bearer <token>`. gRPC clients send the same value as the `authorization` metadata entry. The evidence, BOM, and stats endpoints require the token; health remains unauthenticated.
 
+`--auth-token-file` is the global receiver credential: it permits ingestion and access to evidence, BOM, and stats. Source-specific credentials configured by `--source-auth-policy` are ingestion-only and cannot read those endpoints. Do not reuse the same token for both roles; startup rejects that ambiguity.
+
 The built-in servers do not terminate TLS. Plaintext is intended only for loopback or a protected sidecar network. Terminate both HTTP and gRPC TLS at a trusted proxy for any remote or shared-network deployment.
+
+## Bind a live producer to an evidence source
+
+OTLP resource attributes such as `service.name` are producer-controlled metadata, not authentication. To bind one controlled adapter or verifier to a stable evidence source outside the OTLP payload, generate a random token containing at least 32 bytes and record only its SHA-256 digest:
+
+```bash
+SOURCE_TOKEN="$(openssl rand -hex 32)"
+printf %s "$SOURCE_TOKEN" | shasum -a 256
+```
+
+Create a versioned policy containing the printed lowercase digest:
+
+```json
+{
+  "version": "0.1.0",
+  "bindings": [
+    {
+      "source": "model-signing-verifier",
+      "tokenSha256": "replace-with-64-lowercase-hex-characters"
+    }
+  ]
+}
+```
+
+Then start collection with both source policies:
+
+```bash
+./bin/aiebom collect \
+  --graph-out work/live.evidence.json \
+  --source-auth-policy /secure/path/source-auth.json \
+  --source-trust-policy /secure/path/source-trust.json
+```
+
+The producer sends `Authorization: Bearer <source token>` through the normal OTLP exporter header configuration. The [stable OTLP exporter specification](https://opentelemetry.io/docs/specs/otel/protocol/exporter/#configuration-options) defines configurable headers for both HTTP and gRPC; for SDK exporters this can commonly be supplied as `OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer%20${SOURCE_TOKEN}"`.
+
+The token maps directly to the policy's exact source. That authenticated source replaces the evidence authority label derived from `service.name`; the payload value remains ordinary component metadata. A producer using the global receiver token to self-report a protected source is rejected with HTTP 403 or gRPC `PermissionDenied`, and an unknown source credential is rejected as unauthenticated. A trust rule above `observed` is rejected at startup unless that exact source has an authentication binding.
+
+Multiple bindings may use the same source name so old and new credentials can overlap during rotation without changing graph identity. Token digests must be unique, source matching is exact and case-sensitive, and raw credentials are never written to the graph, BOM, pending queue, or policy. SHA-256 is suitable here only because the bearer token is randomly generated with high entropy; it is not a password hashing scheme.
+
+[`examples/source-auth-policy.json`](../examples/source-auth-policy.json) is a deterministic format fixture whose digest corresponds to the public token `development-only-source-credential-change-me`. Never use that token or policy as a production credential.
+
+Authentication proves which configured producer sent telemetry, not whether its assertions are true or its components are safe. OTLP observations still cannot self-promote above `observed`; a `verified` claim must originate in a separately controlled verifier path.
 
 ## Resource and retry controls
 
@@ -86,13 +130,13 @@ The built-in servers do not terminate TLS. Plaintext is intended only for loopba
 - The same limit bounds unresolved child spans and retained trace-context entries. If the pending queue reaches the limit, the oldest unresolved metadata is normalized without parent identity rather than growing memory without bound.
 - A child whose parent never arrives remains visible in the `pendingSpans` gauge until it is released by its parent or by queue pressure. Pending context is in memory and resets on restart.
 - Duplicate span retries are acknowledged but do not increase evidence counts, even when a retry changes transport.
-- Sources are capped at `observed` by default. `--source-trust-policy` can apply a stricter source cap or authorize an exact source for `verified`; OTLP parsing itself remains unable to self-promote beyond `observed`.
+- Sources are capped at `observed` by default. `--source-trust-policy` can apply a stricter source cap or authorize an exact source for `verified`; any live grant above `observed` also requires an exact `--source-auth-policy` binding. OTLP parsing itself remains unable to self-promote beyond `observed`.
 - Deduplication state is in memory and resets on restart.
 - An existing graph at `--graph-out` is loaded so evidence history continues after restart. Current source caps are reapplied to persisted node, edge, and field-candidate summaries before they are served or merged, and field selection is recomputed.
 - Raw OTLP requests are never written to disk.
 
 ## Protocol scope
 
-v0.9 accepts OTLP trace `ExportTraceServiceRequest` messages over HTTP/JSON, HTTP/protobuf, and gRPC/protobuf. Unknown protobuf fields are discarded for forward compatibility. Resource attributes, instrumentation scope provenance, span attributes, names, timestamps, trace IDs, span IDs, and parent span IDs pass through one normalizer. `/v1/stats` includes `evidenceDowngrades`, counting unique accepted observations whose evidence was reduced by source policy.
+v0.10 accepts OTLP trace `ExportTraceServiceRequest` messages over HTTP/JSON, HTTP/protobuf, and gRPC/protobuf. Unknown protobuf fields are discarded for forward compatibility. Resource attributes, instrumentation scope provenance, span attributes, names, timestamps, trace IDs, span IDs, and parent span IDs pass through one normalizer. `/v1/stats` includes `evidenceDowngrades`, counting unique accepted observations whose evidence was reduced by source policy.
 
 Metrics, logs, and profiles are intentionally not registered or exposed. Partial-success responses are not currently generated: a syntactically valid request is accepted as a whole, while malformed input or persistence failure returns the appropriate HTTP status or gRPC status code.
