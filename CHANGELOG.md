@@ -21,6 +21,7 @@ All notable changes to this experimental project are documented here.
 
 ### Changed
 
+- Upgraded `google.golang.org/grpc` from 1.83.0 to 1.83.1 after GitHub disclosed CVE-2026-84304 / GHSA-vp52-pcj8-j9qc, preventing unauthenticated HTTP/2 DATA-frame fragmentation from exhausting receiver heap memory.
 - MCP runtime instrumentation can now declare a repository-relative source artifact URI and SHA-256 for later scanner correlation; these remain explicit project metadata, not an MCP or OpenTelemetry standard claim.
 - Finding occurrences from the same scanner/rule/artifact are grouped while preserving their observation count. Standard SARIF levels remain reporting metadata and are not converted to CycloneDX severity ratings.
 - Live trust rules above `observed` now require an exact source-authentication binding; authenticated source identity replaces payload-derived authority without changing retained component metadata.
@@ -33,6 +34,7 @@ All notable changes to this experimental project are documented here.
 
 ### Security
 
+- The OTLP/gRPC receiver now uses the first patched gRPC-Go release for GHSA-vp52-pcj8-j9qc. This advisory was newer than the local `govulncheck` result and was caught by GitHub's dependency alert after the first v0.11 push.
 - SARIF attachment rejects URI-only, display-name, digest-mismatch, ambiguous, conflicted, unsafe-path, failed-invocation, and binding-inconsistent inputs; input sizes and nested collection counts are bounded.
 - SARIF messages, snippets, regions, fixes, call flows, and source content are discarded. Imported findings are labeled `scanner-reported`, not verified.
 - Protected source labels can no longer be asserted with the global receiver token or a forged `service.name`; unbound requests are rejected before deduplication, pending correlation, normalization, or persistence.
