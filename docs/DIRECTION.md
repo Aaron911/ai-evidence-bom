@@ -537,7 +537,7 @@ Can a real external SARIF 2.1.0 finding be joined to an already observed MCP ser
 - Policy can reject standard SARIF `error`, and CycloneDX maps the finding to `vulnerabilities[].affects`. The level remains SARIF metadata because `error` does not mean CycloneDX `high` or `critical`.
 - Scanner messages, source snippets, regions, and fixes do not enter graph, policy, or BOM. Evidence is explicitly `scanner-reported` at `observed`, not independently verified.
 - The first push exposed a newly published high-severity gRPC-Go DATA-frame fragmentation denial of service through GitHub Dependabot even though the pinned local `govulncheck` database reported no reachable issue. The directly exposed OTLP/gRPC dependency was raised from vulnerable 1.83.0 to patched 1.83.1 before accepting the candidate.
-- Local focused tests and the real gosec → MCP/OTLP → graph → policy/CycloneDX bridge passed. Full regression and remote gate results are recorded in [`docs/evidence/v0.11.0.md`](evidence/v0.11.0.md).
+- Local focused/full tests and the real gosec → MCP/OTLP → graph → policy/CycloneDX bridge passed. GitHub Actions `ci #27` passed every Go, framework/MCP, schema, and SARIF job; complete Dify workflow `#15` passed, and the gRPC dependency refresh left zero open Dependabot alerts. Full results and two retained scanner-provenance setup failures are recorded in [`docs/evidence/v0.11.0.md`](evidence/v0.11.0.md).
 
 ### Decision
 
