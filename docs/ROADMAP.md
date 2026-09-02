@@ -38,6 +38,8 @@ Exit gate: live exports from two unrelated frameworks produce the same core grap
 - [x] Add bounded graph-path policies and MCP capability escalation detection
 - [x] Generate signed, reproducible evidence snapshots with an explicit RFC 8785-based canonical representation
 - [x] Validate CycloneDX output against the checksum-pinned official schema in CI, including a negative control
+- [x] Correlate metadata-only external SARIF findings to one runtime component by exact artifact URI and SHA-256, with policy and CycloneDX VDR output
+- [ ] Extend artifact identity from one file to a deterministic multi-file manifest/root digest before claiming package-level MCP or Skill coverage
 
 Exit gate: five real drift scenarios are detected with documented evidence and no prompt content retention.
 

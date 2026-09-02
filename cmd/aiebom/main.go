@@ -26,6 +26,7 @@ import (
 	"github.com/Aaron911/ai-evidence-bom/internal/model"
 	"github.com/Aaron911/ai-evidence-bom/internal/normalize"
 	"github.com/Aaron911/ai-evidence-bom/internal/policy"
+	sarifpkg "github.com/Aaron911/ai-evidence-bom/internal/sarif"
 	"github.com/Aaron911/ai-evidence-bom/internal/signing"
 	"github.com/Aaron911/ai-evidence-bom/internal/sourceauth"
 	"github.com/Aaron911/ai-evidence-bom/internal/trust"
@@ -37,6 +38,7 @@ Usage:
   aiebom scan    --input traces.json --graph-out evidence.json [--bom-out bom.cdx.json] [--source-trust-policy trust.json]
   aiebom collect --graph-out evidence.json [--listen 127.0.0.1:4318] [--grpc-listen 127.0.0.1:4317] [--source-trust-policy trust.json] [--source-auth-policy source-auth.json]
   aiebom export  --input evidence.json --output bom.cdx.json
+  aiebom sarif   --input evidence.json --sarif findings.sarif --artifact path/to/source --output enriched.json [--sarif-artifact-uri scanner/path] [--bom-out bom.cdx.json]
   aiebom diff    --before old.json --after new.json --output diff.json [--fail-on-change]
   aiebom policy  --input evidence.json --policy policy.json --output report.json
   aiebom keygen  --private-key private.pem --public-key public.pem
@@ -62,6 +64,8 @@ func main() {
 		err = runCollect(os.Args[2:])
 	case "export":
 		err = runExport(os.Args[2:])
+	case "sarif":
+		err = runSARIF(os.Args[2:])
 	case "diff":
 		err = runDiff(os.Args[2:])
 	case "policy":
@@ -377,6 +381,52 @@ func runExport(args []string) error {
 	return writeJSON(*outputPath, cyclonedx.Export(graph), 0o644)
 }
 
+func runSARIF(args []string) error {
+	flags := flag.NewFlagSet("sarif", flag.ContinueOnError)
+	inputPath := flags.String("input", "", "existing evidence graph JSON")
+	sarifPath := flags.String("sarif", "", "external SARIF 2.1.0 results")
+	artifactPath := flags.String("artifact", "", "repository-relative source artifact scanned by the external tool")
+	sarifArtifactURI := flags.String("sarif-artifact-uri", "", "exact SARIF result URI when it differs from the repository-relative artifact path")
+	outputPath := flags.String("output", "", "enriched evidence graph JSON")
+	bomOut := flags.String("bom-out", "", "optional enriched CycloneDX JSON")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if *inputPath == "" || *sarifPath == "" || *artifactPath == "" || *outputPath == "" {
+		return fmt.Errorf("sarif requires --input, --sarif, --artifact and --output")
+	}
+	var graph model.Graph
+	if err := readJSON(*inputPath, &graph); err != nil {
+		return err
+	}
+	artifactURI, artifactSHA256, err := sarifpkg.ArtifactIdentity(*artifactPath, sarifpkg.DefaultMaxArtifactBytes)
+	if err != nil {
+		return err
+	}
+	if *sarifArtifactURI == "" {
+		*sarifArtifactURI = artifactURI
+	}
+	sarifData, err := readFileOrStdinLimited(*sarifPath, sarifpkg.DefaultMaxSARIFBytes)
+	if err != nil {
+		return err
+	}
+	result, err := sarifpkg.Import(graph, sarifData, artifactURI, *sarifArtifactURI, artifactSHA256, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if err := writeJSON(*outputPath, result.Graph, 0o644); err != nil {
+		return err
+	}
+	if *bomOut != "" {
+		if err := writeJSON(*bomOut, cyclonedx.Export(result.Graph), 0o644); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintf(os.Stderr, "attached %d SARIF finding(s) from URI %s to artifact %s at sha256:%s; skipped %d result(s)\n",
+		result.Attached, result.SARIFArtifactURI, result.ArtifactURI, result.ArtifactSHA256, result.SkippedResults)
+	return nil
+}
+
 func runDiff(args []string) error {
 	flags := flag.NewFlagSet("diff", flag.ContinueOnError)
 	beforePath := flags.String("before", "", "previous evidence graph")
@@ -533,6 +583,13 @@ func readJSON(path string, destination any) error {
 	if err := decoder.Decode(destination); err != nil {
 		return fmt.Errorf("decode %s: %w", path, err)
 	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("decode %s: multiple JSON values", path)
+		}
+		return fmt.Errorf("decode %s trailing data: %w", path, err)
+	}
 	return nil
 }
 
@@ -544,6 +601,39 @@ func readFileOrStdin(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return data, nil
+}
+
+func readFileOrStdinLimited(path string, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return nil, errors.New("read limit must be positive")
+	}
+	var reader io.Reader
+	var file *os.File
+	if path == "-" {
+		reader = os.Stdin
+	} else {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("inspect %s: %w", path, err)
+		}
+		if info.Size() > limit {
+			return nil, fmt.Errorf("read %s: input exceeds %d byte limit", path, limit)
+		}
+		file, err = os.Open(path)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", path, err)
+		}
+		defer file.Close()
+		reader = file
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("read %s: input exceeds %d byte limit", path, limit)
 	}
 	return data, nil
 }

@@ -6,7 +6,7 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 
 > 实际运行时观察到了哪些 Agent、模型、工具、MCP Server、Prompt 和数据源，它们后来发生了什么变化？
 
-当前为实验性 v0.10，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
+当前为实验性 v0.11，不是合规认证工具、恶意软件判定工具，也无法发现未进行插桩的全部 AI 组件。
 
 ## 当前能力
 
@@ -19,6 +19,7 @@ AI Evidence BOM 是一个早期、厂商中立的验证项目：它把生成式 
 - 区分 `inferred`、`declared`、`observed`、`verified` 四级证据；
 - 为每个来源设置证据等级上限：默认最高为 `observed`，只有运维策略精确授权的来源才能保留 `verified`，在线受保护来源还可绑定 OTLP 载荷之外的独立采集凭证；
 - 对版本、摘要和保留属性记录字段级候选证据，确定性选择最强值并显式暴露冲突；
+- 接收外部扫描器的 SARIF 2.1.0，在运行时组件的制品 URI 与 SHA-256 同时一致时才绑定发现；
 - 导出 CycloneDX 1.7，并在 CI 中使用校验和固定的官方 Schema 验证；
 - 检测模型、工具、MCP、数据源和权限变化；
 - 使用节点策略和有向图路径策略作为 CI 门禁；
@@ -61,6 +62,29 @@ go build -o ./bin/aiebom ./cmd/aiebom
 ```
 
 示例策略会故意拒绝新出现的 `shell.execute` 能力，并以状态码 3 退出。
+
+## 关联外部 SARIF 安全发现
+
+项目本身不重复实现源码漏洞扫描。用户先运行能输出 SARIF 2.1.0 的现有扫描器，再把扫描结果关联到已经由运行时证据发现的组件：
+
+```bash
+./bin/aiebom sarif \
+  --input work/runtime.evidence.json \
+  --sarif work/gosec.sarif \
+  --artifact scripts/live/mcp_runtime/main.go \
+  --sarif-artifact-uri main.go \
+  --output work/enriched.evidence.json \
+  --bom-out work/enriched.cdx.json
+
+./bin/aiebom policy \
+  --input work/enriched.evidence.json \
+  --policy examples/policy-sarif-error.json \
+  --output work/sarif-policy.json
+```
+
+`--artifact` 必须是仓库内的相对路径普通文件，用于现场计算稳定 URI 和 SHA-256；只有扫描器以不同的扫描根目录报告路径时，才需要用 `--sarif-artifact-uri` 明确写出 SARIF 中的精确 URI。运行时图中的 URI 与所选摘要必须同时匹配且没有冲突；不允许按显示名称猜测。
+
+图中只保留扫描器名称/版本、规则 ID、SARIF 标准级别、目标 URI/摘要、出现次数和 `affected_by` 关系；消息、源码片段、行号、调用路径和修复内容都会丢弃。`scanner-reported` 只表示“外部扫描器报告过”，不代表本项目验证了漏洞可利用性，也不把 SARIF `error` 伪装成 CycloneDX `high` 或 `critical`。导出时 finding 会成为 CycloneDX vulnerability，而不是软件组件。详见 [v0.11 证据记录](docs/evidence/v0.11.0.md)。
 
 ## 授权可信验证器
 
@@ -125,17 +149,18 @@ curl --fail-with-body \
 
 同一个 HTTP 地址还接受 `application/x-protobuf`，gRPC 端口实现标准 OTLP `TraceService/Export`。可通过 `GET /healthz` 检查健康状态，并通过 `/v1/evidence`、`/v1/bom`、`/v1/stats` 查看实时结果。
 
-现在可以直接接在 OpenTelemetry Collector 后面：可使用 [OTLP/HTTP Protobuf 配置](examples/otel-collector-http.yaml) 或 [OTLP/gRPC 配置](examples/otel-collector-grpc.yaml)。鉴权、请求限制、TLS 边界和协议范围见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。v0.10 只处理 traces，不接收 metrics、logs 或 profiles。
+现在可以直接接在 OpenTelemetry Collector 后面：可使用 [OTLP/HTTP Protobuf 配置](examples/otel-collector-http.yaml) 或 [OTLP/gRPC 配置](examples/otel-collector-grpc.yaml)。鉴权、请求限制、TLS 边界和协议范围见英文 [运行时接收器文档](docs/RUNTIME_RECEIVER.md)。v0.11 只处理 traces，不接收 metrics、logs 或 profiles。
 
-无需模型 API Key 即可运行四项确定性兼容性检查：
+无需模型 API Key 即可运行五项确定性兼容性检查：
 
 ```bash
 scripts/live/verify_agent_framework.sh
 scripts/live/verify_dify_instrumentation.sh
 scripts/live/verify_dify_runtime.sh
 scripts/live/verify_mcp_runtime.sh
+scripts/live/verify_sarif_bridge.sh
 ```
 
-第一项运行 Microsoft Agent Framework 的真实 Agent、模型遥测和工具调用链路；第二项快速隔离执行 Dify 1.16.1 的真实 OTel handler/parser；第三项启动官方最小 Dify 应用栈；第四项运行官方 Go MCP SDK v1.7.0 的真实 stdio 客户端/服务端，通过 `server/discover` 获得稳定服务身份，并验证能力漂移和 `Agent → MCP Server → Tool` 路径策略。MCP SDK 本身不会自动发出 OTLP，本测试在应用边界插桩；`aiebom.mcp.server.*` 是明确标注的项目扩展，不冒充 OTel 标准字段。证据等级和限制见 [兼容矩阵](docs/COMPATIBILITY.md)、[v0.6 验证记录](docs/evidence/v0.6.0.md) 与 [v0.7 验证记录](docs/evidence/v0.7.0.md)。
+前四项分别验证 Microsoft Agent Framework、Dify 隔离插桩、Dify 完整应用栈和官方 Go MCP SDK 的真实运行路径；第五项使用 gosec 2.28.0 扫描同一个 MCP fixture，并用官方 SARIF 与 CycloneDX Schema 验证整个外部发现关联链路。MCP SDK 本身不会自动发出 OTLP，本测试在应用边界插桩；`aiebom.mcp.server.*` 是明确标注的项目扩展，不冒充 OTel 标准字段。证据等级和限制见 [兼容矩阵](docs/COMPATIBILITY.md)、[v0.7 MCP 验证记录](docs/evidence/v0.7.0.md) 与 [v0.11 SARIF 验证记录](docs/evidence/v0.11.0.md)。
 
 兼容矩阵见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)，每轮方向校准记录见 [docs/DIRECTION.md](docs/DIRECTION.md)。完整使用方法、架构和项目边界请查看英文 [README.md](README.md)。

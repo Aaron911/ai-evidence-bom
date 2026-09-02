@@ -6,7 +6,7 @@ It answers a narrower question than an ordinary scanner:
 
 > What models, agents, tools, MCP servers, prompts, and data sources were actually observed at runtime, and how did that set change?
 
-The project is an experimental v0.10 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
+The project is an experimental v0.11 validation build. It is not a compliance certification, a malware verdict engine, or a complete view of systems that are not instrumented.
 
 ## Current capabilities
 
@@ -19,6 +19,7 @@ The project is an experimental v0.10 validation build. It is not a compliance ce
 - Records evidence as `inferred`, `declared`, `observed`, or `verified`.
 - Caps every source at `observed` by default, preserves `verified` only for exact operator-authorized sources, and can bind protected live sources to ingest-only credentials outside OTLP.
 - Retains field-level evidence for versions, digests, and properties, resolves them independently of arrival order, and exposes competing values as conflicts.
+- Imports a bounded, metadata-only SARIF 2.1.0 subset from external scanners and attaches findings only when a runtime component's artifact URI and SHA-256 agree.
 - Exports CycloneDX 1.7 JSON with AI/ML component types and relationships, validated in CI against the checksum-pinned official schema.
 - Compares two evidence graphs to find new, removed, and changed capabilities.
 - Enforces node and directed graph-path JSON policies suitable for CI gates.
@@ -72,9 +73,33 @@ scripts/live/verify_agent_framework.sh
 scripts/live/verify_dify_instrumentation.sh
 scripts/live/verify_dify_runtime.sh
 scripts/live/verify_mcp_runtime.sh
+scripts/live/verify_sarif_bridge.sh
 ```
 
-The Microsoft check runs the released Agent Framework core, including its real Agent, chat telemetry, function invocation, tool execution, and OTLP exporter paths. The lightweight Dify check executes the pinned 1.16.1 OTel workflow handler and node parsers in isolation. The full Dify check starts an official minimal application stack and verifies its unmodified OTLP export. The MCP check runs an official Go SDK v1.7.0 client and server over stdio, obtains stable identity from `server/discover`, executes `tools/list` and `tools/call`, and proves that an added declared capability is caught by graph diff and a directed path policy. No check needs a model API key or paid call. See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md), [the v0.6 Dify record](docs/evidence/v0.6.0.md), and [the v0.7 MCP record](docs/evidence/v0.7.0.md) for exact evidence grades and prerequisites.
+The Microsoft check runs the released Agent Framework core, including its real Agent, chat telemetry, function invocation, tool execution, and OTLP exporter paths. The lightweight Dify check executes the pinned 1.16.1 OTel workflow handler and node parsers in isolation. The full Dify check starts an official minimal application stack and verifies its unmodified OTLP export. The MCP check runs an official Go SDK v1.7.0 client and server over stdio, obtains stable identity from `server/discover`, executes `tools/list` and `tools/call`, and proves that an added declared capability is caught by graph diff and a directed path policy. The SARIF check runs gosec 2.28.0 against the real MCP fixture and validates both SARIF and the resulting CycloneDX VDR document against checksum-pinned official schemas. No check needs a model API key or paid call. See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md), [the v0.6 Dify record](docs/evidence/v0.6.0.md), [the v0.7 MCP record](docs/evidence/v0.7.0.md), and [the v0.11 SARIF record](docs/evidence/v0.11.0.md) for exact evidence grades and prerequisites.
+
+### Attach external SARIF findings
+
+AI Evidence BOM does not replace a source scanner. An operator first runs a scanner that emits [SARIF 2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html), then joins its results to an already observed component:
+
+```bash
+./bin/aiebom sarif \
+  --input work/runtime.evidence.json \
+  --sarif work/gosec.sarif \
+  --artifact scripts/live/mcp_runtime/main.go \
+  --sarif-artifact-uri main.go \
+  --output work/enriched.evidence.json \
+  --bom-out work/enriched.cdx.json
+
+./bin/aiebom policy \
+  --input work/enriched.evidence.json \
+  --policy examples/policy-sarif-error.json \
+  --output work/sarif-policy.json
+```
+
+`--artifact` is a repository-relative regular file used to derive the stable graph URI and SHA-256. `--sarif-artifact-uri` is needed only when the scanner reports a different scan-root-relative URI; it is an explicit exact mapping, not a name heuristic. The target graph must already contain the same artifact URI and selected digest, with no conflict. A digest mismatch, URI-only/name-only match, ambiguous target, unsafe path, failed scanner invocation, or malformed binding-critical SARIF is rejected.
+
+Only scanner name/version, rule ID, standard SARIF level (`note`, `warning`, or `error`), target URI/digest, occurrence count, and the `affected_by` relationship survive. Messages, snippets, regions, call flows, fixes, and source content are discarded. A finding means “this external scanner reported this rule,” not that AI Evidence BOM verified exploitability or safety. Finding nodes become CycloneDX `vulnerabilities`; they are not mislabeled as software components, and SARIF `error` is not translated into a CycloneDX `high` or `critical` rating.
 
 ### Live OTLP collection
 
@@ -207,10 +232,14 @@ OTLP JSON files / declarations ──> scan ────────────
                                                                 evidence normalizer
                                                                            |
                                                                            v
-                                                                vendor-neutral graph
-                                                                    |      |      |
-                                                                    v      v      v
-                                                              CycloneDX  diff  policy/sign
+                                                              runtime evidence graph ─┐
+                                                                                      │
+external SARIF + local artifact ──> exact URI/SHA-256 binding ────────────────────────┤
+                                                                                      v
+                                                                        enriched graph
+                                                                         |     |     |
+                                                                         v     v     v
+                                                                  CycloneDX  diff  policy/sign
 ```
 
 The internal graph is the source of truth. Export formats are adapters so the core is not coupled to one BOM standard.
@@ -227,6 +256,7 @@ Policies are JSON:
   "requireProvidersFor": ["model", "tool"],
   "deniedNamePatterns": ["(?i)shell|execute"],
   "requireVersionsFor": ["model", "tool"],
+  "deniedFindingLevels": ["error"],
   "forbidInferred": true,
   "forbidFieldConflicts": true
 }
@@ -266,9 +296,10 @@ See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for exact framework coverage 
 This project does not currently:
 
 - capture traffic from closed-source clients without instrumentation;
-- ingest OTLP metrics, logs, or profiles; v0.10 deliberately accepts traces only;
+- ingest OTLP metrics, logs, or profiles; v0.11 deliberately accepts traces only;
 - make the official MCP SDK emit OTLP automatically; the v0.7 live check installs application instrumentation around its real SDK calls;
 - trust MCP tool descriptions, schemas, or annotations as proof of safe behavior;
+- scan source code itself, infer SARIF paths, or treat scanner findings as verified vulnerabilities;
 - prove which weights a hosted model provider actually served;
 - retain prompt, completion, tool argument, or tool result content;
 - declare a prompt, model, or tool safe;

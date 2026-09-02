@@ -519,6 +519,45 @@ Ingest one external SARIF 2.1.0 result for a deliberately vulnerable MCP server 
 
 The test fails if mapping requires a framework-specific name heuristic, if a mismatched digest still attaches, if scanner output is relabeled as built-in verification, or if the implementation starts duplicating vulnerability detection. First verify the chosen external tool's actual export contract; keep the core scanner-agnostic.
 
+## v0.11 external SARIF correlation calibration — 2026-09-02
+
+This is an unreleased product/schema candidate. It does not add an internal vulnerability scanner, claim scanner authenticity or exploitability, cover a package/Skill, or create a tag or release.
+
+### Uncertainty tested
+
+Can a real external SARIF 2.1.0 finding be joined to an already observed MCP server only through stable artifact URI plus current SHA-256, fail policy, and produce standards-valid CycloneDX VDR output without retaining scanner messages or source content?
+
+### Evidence gained
+
+- The final OASIS SARIF 2.1.0 contract supplies portable scanner, rule, result level, invocation, suppression, and physical artifact-location fields. The official schema is checksum-pinned and validates the actual scanner output in CI.
+- gosec 2.28.0 reports two real `G204` occurrences for the vulnerable MCP Go fixture. The importer groups them into one finding with occurrence evidence instead of multiplying graph identities.
+- Runtime instrumentation supplies repository-relative artifact URI and SHA-256 to the already protocol-discovered MCP server. Import rehashes the current regular file and requires one exact, conflict-free graph target.
+- gosec reports `main.go` relative to its scan root. An explicit second URI maps that scanner location to the digested repository artifact; no basename, suffix, display-name, framework, or source-content heuristic is used.
+- Wrong digest and missing graph URI fail before output. A result for another exact URI is skipped. Invalid binding-critical SARIF, unsafe paths, failed scanner invocation, and conflicting target evidence are rejected.
+- Policy can reject standard SARIF `error`, and CycloneDX maps the finding to `vulnerabilities[].affects`. The level remains SARIF metadata because `error` does not mean CycloneDX `high` or `critical`.
+- Scanner messages, source snippets, regions, and fixes do not enter graph, policy, or BOM. Evidence is explicitly `scanner-reported` at `observed`, not independently verified.
+- Local focused tests and the real gosec → MCP/OTLP → graph → policy/CycloneDX bridge passed. Full regression and remote gate results are recorded in [`docs/evidence/v0.11.0.md`](evidence/v0.11.0.md).
+
+### Decision
+
+**Continue, but keep the scope narrow.** The single-file test confirms the project's evidence-layer advantage: it can correlate specialist scanner output with a component known from runtime evidence without duplicating scanning logic. That supports vulnerability context and deployment gates while preserving standards-first inputs and metadata-only output.
+
+This does not justify a generic MCP/Skill scanner, a scanner marketplace, automatic remediation, or severity synthesis. External scanners remain responsible for detection; AI Evidence BOM owns identity correlation, provenance, evidence strength, drift, export, and policy.
+
+### Risks and pivot signals
+
+- A SARIF report may be forged, stale, incomplete, or wrong. Digest binding identifies the scanned file but does not authenticate the scanner or prove exploitability.
+- Explicit scan-root URI mapping is operator-controlled. If real integrations cannot produce a deterministic mapping without per-scanner heuristics, stop broadening the importer rather than weakening identity matching.
+- One file is not a server package. If a deterministic manifest cannot cover multi-file source and build inputs independent of path/order, retain single-file experimental status and do not market Skill/MCP package coverage.
+- SARIF levels are not vulnerability severities. If users require CVSS/OSV enrichment, accept separately sourced and evidenced standard fields rather than infer them from `error`/`warning`.
+- Runtime artifact attributes are current application instrumentation, not automatic MCP or OTel fields. If operators cannot emit trustworthy artifact identity, the finding bridge cannot attach safely.
+
+### Next smallest falsifiable test
+
+Define a deterministic multi-file artifact manifest/root digest and bind one observed MCP server to SARIF results in two files. Reordering the manifest, moving the checkout, or changing the scanner's scan root must not change identity; changing either file must break the binding.
+
+The test fails if it needs absolute paths, scanner-specific result parsing, source-content retention, or a display-name fallback. Until it passes, keep `aiebom sarif` explicitly single-file and do not claim complete MCP/Skill vulnerability coverage.
+
 ## Release calibration template
 
 For each later release, append a dated section containing:

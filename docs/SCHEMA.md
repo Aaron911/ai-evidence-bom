@@ -89,6 +89,8 @@ The live adapter attaches protocol-derived identity using project-owned attribut
 | `aiebom.mcp.tool.input_schema_sha256` | SHA-256 of the adapter's JSON encoding; raw schema is discarded. |
 | `aiebom.mcp.tool.read_only`, `aiebom.mcp.tool.destructive` | Untrusted MCP annotation hints. |
 | `aiebom.mcp.tool.annotations_untrusted` | Explicit warning that annotation hints are not verified behavior. |
+| `aiebom.artifact.uri` | Operator-supplied repository-relative source artifact URI for an MCP server. |
+| `aiebom.artifact.sha256` | Operator-computed SHA-256 of that exact artifact; normalized into `digests.sha256`. |
 
 These are AI Evidence BOM extensions, not OpenTelemetry standard attributes. Legacy `mcp.server.*` and `mcp.tool.*` aliases remain readable for compatibility but have the same non-standard status. Descriptions, schema bodies, arguments, and results are never graph properties.
 
@@ -96,13 +98,33 @@ These are AI Evidence BOM extensions, not OpenTelemetry standard attributes. Leg
 
 When an `invoke_agent` span summarizes a requested model and a concrete model operation such as `chat` exists below it, the summary model is suppressed. The concrete model span retains the actual model provider and evidence. This avoids counting one call twice or treating a framework provider as the model provider.
 
+## External SARIF finding bridge
+
+`aiebom sarif` accepts one existing graph, one external SARIF 2.1.0 document, and one repository-relative regular file. The command hashes the file at import time and finds exactly one non-finding graph node whose selected `aiebom.artifact.uri` and `digests.sha256` match without field conflict. URI-only, digest-only, display-name, ambiguous, conflicted, absolute, parent-traversing, symlink, and digest-mismatch bindings are rejected.
+
+The SARIF result location must equal the derived artifact URI. When a scanner reports a path relative to a different scan root, `--sarif-artifact-uri` provides that second exact URI. This is an explicit operator mapping; the graph identity and digest still come from `--artifact`, and the importer does not strip prefixes, search suffixes, compare basenames, or inspect source content to guess a target. Absolute/file URIs and unresolved `uriBaseId` values are rejected; callers must provide one resolved, canonically escaped relative URI.
+
+The core validates a bounded binding-critical subset of SARIF rather than duplicating its complete extensible JSON Schema: version `2.1.0`, 1–32 runs, scanner identity/version, up to 20,000 rules and 10,000 results per run, rule ID/index consistency, successful invocations, valid result kind/level, suppression state, and up to 32 locations per result. SARIF and the artifact are each limited to 16 MiB. The live gate separately validates real gosec output against the checksum-pinned official OASIS schema.
+
+Only unsuppressed `fail` results for the exact SARIF artifact URI become graph nodes. A suppression with absent or `accepted` status is treated as active; `underReview` and `rejected` findings remain visible to the security gate. Duplicate occurrences of one scanner/rule/artifact identity merge into one `finding` node whose evidence `observationCount` records result occurrences. Its selected metadata is restricted to:
+
+- scanner name and optional version;
+- rule ID;
+- SARIF level `note`, `warning`, or `error`;
+- `sarif-2.1.0` format and `scanner-reported` assertion;
+- target repository URI and SHA-256.
+
+The target component points to the finding with `affected_by`. SARIF messages, markdown, snippets, regions, stacks, call flows, fixes, taxonomies, and source content are neither copied nor fingerprinted. `observed` describes the scanner execution/report observation; `scanner-reported` explicitly prevents it from being interpreted as independently verified exploitability.
+
+`deniedFindingLevels` can reject exact standard SARIF levels. It deliberately accepts only `none`, `note`, `warning`, and `error`; these are result-reporting levels, not CVSS/CycloneDX severity ratings.
+
 ## Evidence graph
 
-The v0.10 graph has the same structural fields as v0.9; the version change records the authenticated live-source contract. The graph contains:
+The v0.11 graph keeps the existing top-level structure and adds a `finding` node contract plus `affected_by` edges for externally reported SARIF results. The graph contains:
 
 - `schemaVersion`, `generatedAt`, `source`, and privacy metadata;
-- stable `nodes` for agents, models, tools, MCP servers, prompts, and data sources;
-- stable `edges` describing `uses`, `invokes`, `provides`, `connects_to`, `reads_from`, and `uses_prompt` relationships.
+- stable `nodes` for agents, models, tools, MCP servers, prompts, data sources, and scanner findings;
+- stable `edges` describing `uses`, `invokes`, `provides`, `connects_to`, `reads_from`, `uses_prompt`, and `affected_by` relationships.
 
 MCP capability paths are directed: `agent -[connects_to]-> mcp_server -[provides]-> tool`. A tool returned by `tools/list` is `declared`; an actual `tools/call` observation upgrades that same tool and `provides` edge to `observed` and adds `agent -[invokes]-> tool`.
 
@@ -185,6 +207,8 @@ OTLP JSON and protobuf requests are converted to the same internal observation c
 
 See [`examples/policy-mcp-capability.json`](../examples/policy-mcp-capability.json) for an Agent-to-MCP-to-tool capability rule.
 
+`deniedFindingLevels` is independent of graph-path matching. See [`examples/policy-sarif-error.json`](../examples/policy-sarif-error.json) for a gate that rejects any selected or conflicting candidate SARIF `error` level.
+
 ## CycloneDX mapping
 
 | Evidence node | CycloneDX component type |
@@ -195,4 +219,6 @@ See [`examples/policy-mcp-capability.json`](../examples/policy-mcp-capability.js
 | software | `library` |
 | agent, tool, MCP server | `application` |
 
-Evidence-specific fields are exported as namespaced CycloneDX properties beginning with `aibom:`. Field candidate properties contain only values already retained by the evidence graph; they do not add model input, output, prompt, credential, tool argument, or tool result content.
+Finding nodes are not exported as components. Each becomes a CycloneDX `vulnerabilities` entry whose `id` is the SARIF rule ID, `source.name` is the scanner, and `affects[].ref` points to the affected component BOM reference. Standard SARIF levels are retained as `aibom:sarif:level` properties rather than incorrectly translated into CycloneDX ratings.
+
+Evidence-specific fields are exported as namespaced CycloneDX properties beginning with `aibom:`. Field candidate properties contain only values already retained by the evidence graph; they do not add model input, output, prompt, credential, tool argument, tool result, SARIF message, or source content.

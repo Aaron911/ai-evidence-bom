@@ -247,6 +247,8 @@ func TestConcreteModelSuppressesOnlyNearestAgentSummary(t *testing.T) {
 func TestBuildMergesDeclaredMCPDiscoveryWithObservedToolCall(t *testing.T) {
 	timestamp := time.Unix(100, 0).UTC()
 	serverAttributes := map[string]string{
+		"aiebom.artifact.sha256":            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"aiebom.artifact.uri":               "scripts/live/mcp_runtime/main.go",
 		"aiebom.mcp.server.name":            "demo-security-tools",
 		"aiebom.mcp.server.version":         "1.0.0",
 		"aiebom.mcp.server.identity_source": "server_info",
@@ -315,6 +317,9 @@ func TestBuildMergesDeclaredMCPDiscoveryWithObservedToolCall(t *testing.T) {
 	assertEdge(t, graph, serverID, weatherID, "provides")
 	assertEdge(t, graph, serverID, shellID, "provides")
 	for _, node := range graph.Nodes {
+		if node.ID == serverID && (node.Properties["aiebom.artifact.uri"] != "scripts/live/mcp_runtime/main.go" || node.Digests["sha256"] == "") {
+			t.Fatalf("MCP artifact binding was not retained: %+v", node)
+		}
 		if node.ID == shellID && node.Evidence.Level != model.EvidenceDeclared {
 			t.Fatalf("uninvoked capability evidence=%q want=declared", node.Evidence.Level)
 		}

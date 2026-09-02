@@ -6,6 +6,9 @@ All notable changes to this experimental project are documented here.
 
 ### Added
 
+- Added a bounded, scanner-neutral SARIF 2.1.0 metadata importer that correlates unsuppressed failing results to one existing runtime component by exact artifact URI and SHA-256.
+- Added `finding` nodes, `affected_by` graph edges, `deniedFindingLevels` policy gates, and CycloneDX 1.7 VDR vulnerability/affects export.
+- Added a real gosec 2.28.0 MCP fixture gate with checksum-pinned official OASIS SARIF and CycloneDX schemas, plus digest mismatch, name-only, policy, and privacy controls.
 - Added versioned live source-authentication policies that bind SHA-256 digests of high-entropy ingest credentials to exact evidence sources over standard OTLP HTTP/gRPC bearer headers.
 - Added overlapping credential bindings for stable source identity during rotation and negative controls for wrong credentials, forged `service.name`, read-privilege separation, gRPC metadata, and credential leakage.
 - Added versioned, operator-defined exact-source trust policies for both `scan` and `collect`.
@@ -18,6 +21,8 @@ All notable changes to this experimental project are documented here.
 
 ### Changed
 
+- MCP runtime instrumentation can now declare a repository-relative source artifact URI and SHA-256 for later scanner correlation; these remain explicit project metadata, not an MCP or OpenTelemetry standard claim.
+- Finding occurrences from the same scanner/rule/artifact are grouped while preserving their observation count. Standard SARIF levels remain reporting metadata and are not converted to CycloneDX severity ratings.
 - Live trust rules above `observed` now require an exact source-authentication binding; authenticated source identity replaces payload-derived authority without changing retained component metadata.
 - Global receiver credentials continue to authorize ingestion and reads, while source credentials authorize ingestion only. Reusing one credential for both roles is rejected at startup.
 - Raised the minimum Go patch release from 1.26.5 to 1.26.6 after the pinned vulnerability gate found six reachable standard-library issues fixed by 1.26.6.
@@ -28,6 +33,8 @@ All notable changes to this experimental project are documented here.
 
 ### Security
 
+- SARIF attachment rejects URI-only, display-name, digest-mismatch, ambiguous, conflicted, unsafe-path, failed-invocation, and binding-inconsistent inputs; input sizes and nested collection counts are bounded.
+- SARIF messages, snippets, regions, fixes, call flows, and source content are discarded. Imported findings are labeled `scanner-reported`, not verified.
 - Protected source labels can no longer be asserted with the global receiver token or a forged `service.name`; unbound requests are rejected before deduplication, pending correlation, normalization, or persistence.
 - Source-authentication policy parsing rejects unsupported versions, unknown fields, empty bindings, non-canonical or duplicate token digests, and trailing JSON. Presented source tokens must contain at least 32 bytes and raw credentials are not persisted.
 - Compact input can no longer grant itself `verified` authority: unmatched sources default to at most `observed`, while exact source rules can grant `verified` or impose stricter caps.
@@ -41,6 +48,7 @@ All notable changes to this experimental project are documented here.
 
 ### Validation
 
+- Added a CI job that builds pinned gosec 2.28.0, validates its real output against the checksum-pinned OASIS SARIF 2.1.0 schema, imports it into a live MCP graph, applies policy, and validates CycloneDX VDR output.
 - Added a CI gate that exports a real BOM, verifies the checksum-pinned official CycloneDX 1.7 JSON Schema, and validates the output against it.
 - Added a negative control proving that a deliberately invalid `bomFormat` is rejected, so a no-op validator cannot satisfy the gate.
 - Migrated BOM generator metadata from the deprecated legacy `metadata.tools` array to the CycloneDX 1.7 `metadata.tools.components` shape.
@@ -52,6 +60,8 @@ All notable changes to this experimental project are documented here.
 
 ### Known gaps
 
+- v0.11 binds one regular source file, not a multi-file package, build artifact, container, repository tree, or transitive dependency graph. Explicit scan-root URI mapping is still operator-controlled.
+- External scanner identity and findings are assertions and may be wrong; deterministic attachment does not prove scanner authenticity, exploitability, or component safety.
 - Built-in OpenSSF Model Signing verification is still planned. Live source authentication proves possession of a static bearer credential, not the truth or safety of claims; credentials have no intrinsic expiry, audience, or hardware-backed identity.
 - Offline compact `scan` input remains an operator-controlled file boundary and does not use live source authentication.
 - Distinct field candidates and observed versions are not yet cardinality-bounded for long-lived graphs.

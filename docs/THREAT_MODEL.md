@@ -15,7 +15,7 @@
 4. Policy authors are trusted to define organizational intent.
 5. Hosted model providers remain outside the verifier's control.
 
-## Addressed through v0.10
+## Addressed through v0.11
 
 - Evidence provenance is explicit rather than collapsing declarations and observations.
 - Prompt and tool content is not retained.
@@ -46,6 +46,10 @@
 - A request using only the global receiver token cannot assert a source protected by a source credential; it is rejected before deduplication or pending correlation, preventing an unbound claim from poisoning retry state.
 - Source authentication policies strictly validate versioned, unique SHA-256 credential digests. Presented tokens must contain at least 32 bytes, multiple rotation credentials may retain one stable source identity, and global/read credentials cannot be reused as source credentials.
 - Source credentials authorize ingestion only. They cannot read the evidence graph, BOM, or receiver statistics when those endpoints are protected by the global token.
+- External SARIF findings attach only to one graph component whose repository-relative artifact URI and selected SHA-256 match without conflict; display-name and URI-only matching are not used.
+- SARIF input, run/rule/result/location counts, artifact size, strings, rule/index consistency, invocation success, result kind/level, and relative paths are bounded or validated before findings are merged.
+- SARIF content fields are discarded. Only scanner/rule/level and exact target metadata survive, and the assertion is labeled `scanner-reported` rather than verified.
+- SARIF `error` is kept as a reporting level and is not converted into an unsupported CVSS or CycloneDX severity claim.
 
 ## Known limitations
 
@@ -56,7 +60,7 @@
 - The built-in HTTP and gRPC servers do not terminate TLS. Remote use requires a trusted TLS proxy and access controls.
 - Retry deduplication is bounded and in-memory, so its history resets on restart and very old duplicates may be counted again.
 - A sampled-out or missing parent can leave child metadata pending until queue pressure; monitor `pendingSpans`. Pending context is not persisted across restarts.
-- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.10 protocol scope.
+- Only OTLP traces are accepted; metrics, logs, and profiles are outside the v0.11 protocol scope.
 - There is no sandbox around input parsing.
 - Hosted model aliases and weights cannot be independently verified.
 - Exact-byte signing remains the default and is formatting-sensitive. Canonical signing is opt-in and currently accepts AI Evidence BOM graph JSON only; it does not implement CycloneDX JSF/JWS or canonicalize arbitrary files.
@@ -68,5 +72,9 @@
 - Path policy matches exact directed relation sequences and does not yet support counts, time windows, negative reachability, or aggregate behavior.
 - A selected field value is the strongest-supported candidate, not necessarily the most recently deployed value. Consumers must inspect `conflict` or enable `forbidFieldConflicts` when ambiguity is unacceptable.
 - Distinct field candidates and `observedVersions` are not yet cardinality-bounded. A malicious high-cardinality producer can grow a long-lived graph even though request sizes and trace-ID retention are bounded.
+- SARIF is untrusted scanner output. A report can contain false positives, false negatives, misleading rule IDs/levels, or forged scanner identity; import proves only deterministic correlation to the current file digest, not scanner authenticity or exploitability.
+- `--sarif-artifact-uri` is an operator assertion needed when the scanner uses another scan root. Exact matching prevents heuristic collisions, but a malicious or mistaken operator can still provide a false mapping.
+- v0.11 identifies only one regular source file at a time. It does not bind a built binary, container image, repository tree, transitive dependency set, multi-file MCP server, or Skill package.
+- The core validates only the bounded SARIF fields needed for binding. Operators needing complete format validation should use the official OASIS schema; the executable gate does so for the pinned gosec fixture.
 
 Security issues should follow [SECURITY.md](../SECURITY.md), not a public issue containing sensitive reproduction material.

@@ -42,6 +42,52 @@ func TestExportMapsModelAndRelations(t *testing.T) {
 	}
 }
 
+func TestExportMapsFindingToVulnerabilityWithoutSourceContent(t *testing.T) {
+	finding := model.Node{
+		ID:       "finding:1",
+		Type:     "finding",
+		Name:     "scanner.rule",
+		Provider: "Semgrep OSS",
+		Properties: map[string]string{
+			"aiebom.finding.sarif.level":     "error",
+			"aiebom.finding.scanner.version": "1.146.0",
+			"aiebom.finding.artifact.uri":    "server.go",
+			"aiebom.finding.artifact.sha256": "digest",
+			"aiebom.finding.assertion":       "scanner-reported",
+		},
+		Evidence: model.EvidenceSummary{Level: model.EvidenceObserved, ObservationCount: 1},
+	}
+	finding.AddFieldEvidence(model.FieldProperty, "aiebom.finding.sarif.level", "error", finding.Evidence)
+	finding.ResolveFieldEvidence()
+	graph := model.Graph{
+		GeneratedAt: time.Unix(1, 0).UTC(),
+		Source:      "demo",
+		Nodes: []model.Node{
+			{ID: "mcp:1", Type: "mcp_server", Name: "server", Evidence: model.EvidenceSummary{Level: model.EvidenceObserved}},
+			finding,
+		},
+		Edges: []model.Edge{{ID: "edge:1", From: "mcp:1", To: "finding:1", Relation: "affected_by"}},
+	}
+	bom := Export(graph)
+	if len(bom.Components) != 1 || bom.Components[0].BOMRef != "mcp:1" {
+		t.Fatalf("finding was exported as a component: %#v", bom.Components)
+	}
+	if len(bom.Dependencies) != 1 || len(bom.Dependencies[0].DependsOn) != 0 {
+		t.Fatalf("finding edge leaked into dependencies: %#v", bom.Dependencies)
+	}
+	if len(bom.Vulnerabilities) != 1 {
+		t.Fatalf("vulnerabilities=%#v", bom.Vulnerabilities)
+	}
+	vulnerability := bom.Vulnerabilities[0]
+	if vulnerability.ID != "scanner.rule" || vulnerability.Source.Name != "Semgrep OSS" ||
+		len(vulnerability.Affects) != 1 || vulnerability.Affects[0].Ref != "mcp:1" ||
+		!hasProperty(vulnerability.Properties, "aibom:sarif:level", "error") ||
+		!hasProperty(vulnerability.Properties, "aibom:field-evidence:property:aiebom.finding.sarif.level:candidate:observed", "error") ||
+		!hasProperty(vulnerability.Properties, "aibom:finding:assertion", "scanner-reported") {
+		t.Fatalf("unexpected vulnerability: %#v", vulnerability)
+	}
+}
+
 func hasProperty(properties []Property, name, value string) bool {
 	for _, property := range properties {
 		if property.Name == name && property.Value == value {

@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Aaron911/ai-evidence-bom/internal/model"
+	sarifpkg "github.com/Aaron911/ai-evidence-bom/internal/sarif"
 	"github.com/Aaron911/ai-evidence-bom/internal/signing"
 )
 
@@ -205,5 +207,76 @@ func TestScanCapsVerifiedEvidenceWithoutPolicyFile(t *testing.T) {
 	}
 	if len(graph.Nodes) != 1 || graph.Nodes[0].Evidence.Level != model.EvidenceObserved {
 		t.Fatalf("untrusted verified evidence was not capped: %+v", graph.Nodes)
+	}
+}
+
+func TestRunSARIFMapsScannerURIToDigestedArtifact(t *testing.T) {
+	directory := t.TempDir()
+	originalDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(directory); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalDirectory) })
+
+	if err := os.Mkdir("runtime", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	artifactPath := filepath.Join("runtime", "main.go")
+	if err := os.WriteFile(artifactPath, []byte("package runtime\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	artifactURI, digest, err := sarifpkg.ArtifactIdentity(artifactPath, sarifpkg.DefaultMaxArtifactBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph := model.Graph{
+		SchemaVersion: model.SchemaVersion,
+		GeneratedAt:   time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC),
+		Source:        "test-runtime",
+		Nodes: []model.Node{{
+			ID:         model.StableNodeID("mcp_server", "", "test-server"),
+			Type:       "mcp_server",
+			Name:       "test-server",
+			Digests:    map[string]string{"sha256": digest},
+			Properties: map[string]string{sarifpkg.PropertyArtifactURI: artifactURI},
+			Evidence:   model.EvidenceSummary{Level: model.EvidenceObserved, ObservationCount: 1},
+		}},
+		Edges: []model.Edge{},
+	}
+	inputPath := filepath.Join(directory, "base.json")
+	sarifPath := filepath.Join(directory, "findings.sarif")
+	outputPath := filepath.Join(directory, "enriched.json")
+	if err := writeJSON(inputPath, graph, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sarifData := `{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"gosec","semanticVersion":"2.28.0","rules":[{"id":"G204","defaultConfiguration":{"level":"error"}}]}},"invocations":[{"executionSuccessful":true}],"results":[{"ruleId":"G204","locations":[{"physicalLocation":{"artifactLocation":{"uri":"main.go"}}}]}]}]}`
+	if err := os.WriteFile(sarifPath, []byte(sarifData), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := runSARIF([]string{
+		"--input", inputPath,
+		"--sarif", sarifPath,
+		"--artifact", artifactPath,
+		"--sarif-artifact-uri", "main.go",
+		"--output", outputPath,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var enriched model.Graph
+	if err := readJSON(outputPath, &enriched); err != nil {
+		t.Fatal(err)
+	}
+	if len(enriched.Nodes) != 2 || len(enriched.Edges) != 1 {
+		t.Fatalf("unexpected enriched graph: %+v", enriched)
+	}
+	found := false
+	for _, node := range enriched.Nodes {
+		found = found || node.Type == "finding" && node.Name == "G204" && node.Provider == "gosec"
+	}
+	if !found {
+		t.Fatalf("finding was not imported: %+v", enriched.Nodes)
 	}
 }

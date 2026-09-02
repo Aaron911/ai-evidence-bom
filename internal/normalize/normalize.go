@@ -157,13 +157,19 @@ func (b *Builder) addObservation(observation inputpkg.Observation) {
 	)
 	var mcpNode *model.Node
 	if mcpName != "" {
+		mcpDigests := make(map[string]string)
+		if digest := first(attrs, "aiebom.artifact.sha256"); digest != "" {
+			mcpDigests["sha256"] = strings.TrimPrefix(digest, "sha256:")
+		}
 		mcpNode = b.addNode(nodeInput{
 			Type:     "mcp_server",
 			Name:     mcpName,
 			Identity: firstNonEmpty(first(attrs, "aiebom.mcp.server.id", "mcp.server.id"), mcpName),
 			Version:  first(attrs, "aiebom.mcp.server.version", "mcp.server.version"),
 			Provider: first(attrs, "aiebom.mcp.server.provider", "mcp.server.provider"),
+			Digests:  mcpDigests,
 			Properties: selected(attrs,
+				"aiebom.artifact.uri",
 				"aiebom.mcp.server.identity_source",
 				"aiebom.mcp.discovery.source",
 				"mcp.protocol.version",

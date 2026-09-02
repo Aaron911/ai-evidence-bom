@@ -11,9 +11,22 @@ Compatibility claims are evidence-graded. A green source contract does not imply
 | Live capture | A framework runtime has exported a trace through a standard OTLP transport and the resulting graph has been verified. |
 | Production validated | An authorized non-demo workload has run long enough to exercise relevant paths and operational limits. |
 
-v0.10 retains the **live capture** grades established for the Microsoft Agent Framework core path, a complete Dify application workflow, and one official MCP Go SDK stdio client/server path. None is production validated. Coverage remains limited to the paths described below.
+v0.11 retains the **live capture** grades established for the Microsoft Agent Framework core path, a complete Dify application workflow, and one official MCP Go SDK stdio client/server path. None is production validated. Coverage remains limited to the paths described below.
 
-The v0.8 schema changes merge semantics rather than adding a framework claim: versions, digests, and allowlisted properties retain source-specific candidates, and stronger evidence wins independently of arrival order. v0.9 adds source evidence caps. v0.10 binds protected live sources to ingest-only credentials carried through standard OTLP HTTP/gRPC headers. These changes do not upgrade any framework's evidence grade, make OTLP claims verified, or add framework-specific authentication code.
+The v0.8 schema changes merge semantics rather than adding a framework claim: versions, digests, and allowlisted properties retain source-specific candidates, and stronger evidence wins independently of arrival order. v0.9 adds source evidence caps. v0.10 binds protected live sources to ingest-only credentials carried through standard OTLP HTTP/gRPC headers. v0.11 joins external scanner reports to runtime components by exact artifact identity and digest. These changes do not upgrade any framework's evidence grade, make OTLP or SARIF claims verified, or add framework-specific authentication or scanning code.
+
+## v0.11 external SARIF bridge
+
+| Boundary | Executed evidence | v0.11 treatment |
+|---|---|---|
+| Runtime target | The official MCP Go SDK fixture reports its repository-relative `main.go` URI and SHA-256 through explicit project attributes | The normalizer retains the URI and digest on the already discovered MCP server; this is operator instrumentation, not automatic SDK provenance. |
+| External scanner | gosec 2.28.0 scans the real vulnerable MCP server implementation and emits SARIF 2.1.0 rule `G204` | AI Evidence BOM imports metadata from the scanner report; gosec is a pinned CI fixture, not a product dependency or built-in scanner. |
+| Path binding | gosec reports `main.go` relative to its scan root while the graph uses `scripts/live/mcp_runtime/main.go` | The caller supplies both exact URIs. The graph URI and current file SHA-256 must match exactly; no basename or suffix heuristic is used. |
+| Policy/export | One grouped `error` finding links to the MCP server and fails `deniedFindingLevels` | CycloneDX exports a VDR vulnerability with an `affects` reference, while retaining the SARIF level as metadata rather than inventing a severity rating. |
+| Privacy | Real scanner output contains a finding message and unit fixtures contain message/snippet markers | Messages, snippets, regions, and source text do not reach graph, policy, or CycloneDX output. |
+| Negative controls | Wrong digest and URI/name-only graphs are imported | Both fail before output is written; an exact result URI for a different artifact is skipped rather than guessed. |
+
+This proves scanner-neutral evidence correlation for one Go source file and one scanner, not general vulnerability detection, exploitability validation, full SARIF interpretation, multi-file artifact identity, production validation, or universal MCP/Skill coverage.
 
 ## v0.6 matrix
 
@@ -67,7 +80,7 @@ scripts/live/verify_dify_runtime.sh
 scripts/live/verify_mcp_runtime.sh
 ```
 
-The lightweight framework scripts require Go 1.26.6+, Python 3.12+, `uv`, `git`, `curl`, and `jq`. The MCP check requires Go 1.26.6+, `curl`, and `jq`. The full Dify check additionally requires Docker Compose, `tar`, and a SHA-256 utility. Cold runs need network access for pinned source, packages, and the plugin artifact; no check needs model credentials or makes a paid model call.
+The lightweight framework scripts require Go 1.26.6+, Python 3.12+, `uv`, `git`, `curl`, and `jq`. The MCP check requires Go 1.26.6+, `curl`, and `jq`. The SARIF bridge check additionally requires gosec 2.28.0 and Python `jsonschema==4.26.0`; it downloads checksum-pinned official OASIS SARIF 2.1.0 and CycloneDX 1.7 schemas. The full Dify check additionally requires Docker Compose, `tar`, and a SHA-256 utility. Cold runs need network access for pinned source, packages, schemas, and the plugin artifact; no check needs model credentials or makes a paid model call.
 
 The Agent Framework and isolated Dify checks exercise equivalent `gpt-5` and `weather.lookup` behavior. The full Dify workflow uses the official OpenAI plugin with deterministic local responses and exercises `gpt-4o` plus the built-in `time.current_time` tool. Framework checks require stable agent/model/tool semantics; the MCP check requires stable agent/server/tool capability semantics. Every check fails if a sensitive marker reaches the graph or CycloneDX output.
 

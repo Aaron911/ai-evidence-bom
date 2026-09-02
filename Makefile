@@ -1,4 +1,4 @@
-.PHONY: build test vet validate-cyclonedx demo clean
+.PHONY: build test vet validate-cyclonedx verify-sarif-bridge demo clean
 
 build:
 	go build -o ./bin/aiebom ./cmd/aiebom
@@ -11,6 +11,9 @@ vet:
 
 validate-cyclonedx:
 	scripts/verify_cyclonedx_schema.sh
+
+verify-sarif-bridge:
+	scripts/live/verify_sarif_bridge.sh
 
 demo: build
 	mkdir -p work

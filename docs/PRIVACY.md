@@ -2,7 +2,7 @@
 
 AI telemetry may contain source code, credentials, personal data, system prompts, retrieved documents, tool parameters, and model responses. The project therefore uses a metadata-only default.
 
-## Never retained by the v0.10 normalizer
+## Never retained by the v0.11 normalizer and SARIF importer
 
 - prompt and completion bodies;
 - tool call arguments and results;
@@ -10,10 +10,13 @@ AI telemetry may contain source code, credentials, personal data, system prompts
 - API keys, tokens, cookies, and environment variable values;
 - model input and output attachments;
 - MCP tool descriptions, raw input/output schemas, arguments, and results.
+- SARIF messages, markdown, source snippets, regions, stacks, call flows, fixes, and scanner-provided source content.
 
 These attributes may be present in an input OTLP document, but the normalizer does not copy them into the graph.
 
 The Dify, Microsoft Agent Framework, and MCP executable checks intentionally contain marker values in prompt, input, output, tool-description/schema, tool-argument, and tool-result fields. Automated checks fail if any marker reaches the normalized graph or CycloneDX output.
+
+The SARIF importer retains only scanner name/version, rule ID, standard result level, artifact URI/SHA-256, assertion format/state, occurrence count, and graph relationship. The executable bridge checks that a real gosec message does not reach the evidence graph, policy report, or CycloneDX document; unit fixtures separately cover source snippets. The original SARIF file and scanned source remain operator-controlled inputs and are not erased by this tool.
 
 MCP `tools/list` declarations retain only tool names, server identity/version, selected untrusted boolean annotation hints, and a SHA-256 of the adapter's JSON encoding of the input schema. The digest detects schema drift but does not make the schema safe or trustworthy. Tool names and schema digests can still be sensitive metadata.
 
@@ -43,6 +46,7 @@ The live endpoints expose metadata that may still be operationally sensitive. Bo
 - Input files remain the operator's responsibility. This tool protects its output; it does not erase or secure the original telemetry.
 - A trace ID can become identifying when correlated with another telemetry backend.
 - MCP server and tool names, capability sets, and schema digests can expose operational or security posture.
+- SARIF scanner names, rule IDs, result levels, affected-component links, artifact URIs, and artifact digests can reveal code layout and security posture even without source text.
 - Conflicting historical versions, digests, endpoints, and other allowlisted properties can reveal deployment changes even when they are not selected.
 - A source-authentication digest does not reveal a properly random 32-byte token in practical terms, but theft of the live bearer token permits impersonation until the binding is removed or rotated.
 - Ed25519 signatures provide integrity and origin authentication, not confidentiality.

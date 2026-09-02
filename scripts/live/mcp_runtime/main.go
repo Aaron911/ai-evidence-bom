@@ -41,6 +41,8 @@ type serverIdentity struct {
 	name            string
 	version         string
 	protocolVersion string
+	artifactURI     string
+	artifactSHA256  string
 }
 
 func (identity *serverIdentity) set(name, version, protocolVersion string) {
@@ -49,6 +51,13 @@ func (identity *serverIdentity) set(name, version, protocolVersion string) {
 	identity.name = name
 	identity.version = version
 	identity.protocolVersion = protocolVersion
+}
+
+func (identity *serverIdentity) setArtifact(uri, digest string) {
+	identity.mu.Lock()
+	defer identity.mu.Unlock()
+	identity.artifactURI = uri
+	identity.artifactSHA256 = digest
 }
 
 func (identity *serverIdentity) attributes() []attribute.KeyValue {
@@ -65,6 +74,12 @@ func (identity *serverIdentity) attributes() []attribute.KeyValue {
 			attribute.String("aiebom.mcp.server.identity_source", "server_info"),
 		)
 	}
+	if identity.artifactURI != "" {
+		values = append(values,
+			attribute.String("aiebom.artifact.uri", identity.artifactURI),
+			attribute.String("aiebom.artifact.sha256", identity.artifactSHA256),
+		)
+	}
 	return values
 }
 
@@ -72,9 +87,11 @@ func main() {
 	role := flag.String("role", "client", "client or server")
 	variant := flag.String("variant", "before", "before or after capability set")
 	otlpEndpoint := flag.String("otlp-endpoint", "", "OTLP/HTTP trace endpoint")
+	artifactURI := flag.String("artifact-uri", "", "operator-supplied stable source artifact URI")
+	artifactSHA256 := flag.String("artifact-sha256", "", "operator-supplied source artifact SHA-256")
 	flag.Parse()
 
-	if *variant != "before" && *variant != "after" {
+	if *variant != "before" && *variant != "after" && *variant != "vulnerable" {
 		log.Fatalf("unsupported variant %q", *variant)
 	}
 	var err error
@@ -85,7 +102,10 @@ func main() {
 		if *otlpEndpoint == "" {
 			log.Fatal("--otlp-endpoint is required for client role")
 		}
-		err = runClient(*variant, *otlpEndpoint)
+		if (*artifactURI == "") != (*artifactSHA256 == "") {
+			log.Fatal("--artifact-uri and --artifact-sha256 must be supplied together")
+		}
+		err = runClient(*variant, *otlpEndpoint, *artifactURI, *artifactSHA256)
 	default:
 		log.Fatalf("unsupported role %q", *role)
 	}
@@ -120,13 +140,24 @@ func runServer(variant string) error {
 			&mcp.TextContent{Text: "weather for " + input.Location + ": " + sensitiveResult},
 		}}, nil, nil
 	})
-	if variant == "after" {
+	if variant == "after" || variant == "vulnerable" {
 		shellDestructive := true
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "shell.execute",
 			Description: "deterministic shell fixture; " + sensitiveSchema,
 			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false, DestructiveHint: &shellDestructive},
 		}, func(_ context.Context, _ *mcp.CallToolRequest, input shellInput) (*mcp.CallToolResult, any, error) {
+			if variant == "vulnerable" {
+				// Deliberately vulnerable static-analysis fixture. The live check
+				// discovers but never invokes this tool.
+				output, err := exec.Command("sh", "-c", input.Command).CombinedOutput()
+				if err != nil {
+					return nil, nil, err
+				}
+				return &mcp.CallToolResult{Content: []mcp.Content{
+					&mcp.TextContent{Text: string(output)},
+				}}, nil, nil
+			}
 			return &mcp.CallToolResult{Content: []mcp.Content{
 				&mcp.TextContent{Text: "not executed: " + input.Command + ": " + sensitiveResult},
 			}}, nil, nil
@@ -135,7 +166,7 @@ func runServer(variant string) error {
 	return server.Run(context.Background(), &mcp.StdioTransport{})
 }
 
-func runClient(variant, endpoint string) error {
+func runClient(variant, endpoint, artifactURI, artifactSHA256 string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -164,11 +195,7 @@ func runClient(variant, endpoint string) error {
 	otel.SetTracerProvider(provider)
 	tracer := provider.Tracer("github.com/Aaron911/ai-evidence-bom/mcp-runtime", trace.WithInstrumentationVersion("0.7.0"))
 	identity := new(serverIdentity)
-
-	client := mcp.NewClient(&mcp.Implementation{Name: "aiebom-live-client", Version: "0.7.0"}, &mcp.ClientOptions{
-		Capabilities: &mcp.ClientCapabilities{},
-		Logger:       slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
-	})
+	identity.setArtifact(artifactURI, artifactSHA256)
 
 	agentContext, agentSpan := tracer.Start(ctx, "invoke_agent "+agentID,
 		trace.WithSpanKind(trace.SpanKindInternal),
@@ -185,7 +212,7 @@ func runClient(variant, endpoint string) error {
 	if err != nil {
 		return fmt.Errorf("locate live-check executable: %w", err)
 	}
-	session, err := connectMCP(agentContext, client, executable, variant)
+	client, session, err := connectMCP(agentContext, executable, variant)
 	if err != nil {
 		return fmt.Errorf("connect to MCP server: %w", err)
 	}
@@ -236,24 +263,30 @@ func runClient(variant, endpoint string) error {
 	return nil
 }
 
-func connectMCP(ctx context.Context, client *mcp.Client, executable, variant string) (*mcp.ClientSession, error) {
+func connectMCP(ctx context.Context, executable, variant string) (*mcp.Client, *mcp.ClientSession, error) {
 	// Retry only transient stdio discovery closure; semantic/protocol failures
-	// return immediately and the total attempt count remains bounded.
+	// return immediately and the total attempt count remains bounded. A failed
+	// connect closes its Client, so every retry must use a fresh instance.
 	var lastError error
 	for attempt := 1; attempt <= 3; attempt++ {
+		client := mcp.NewClient(&mcp.Implementation{Name: "aiebom-live-client", Version: "0.7.0"}, &mcp.ClientOptions{
+			Capabilities: &mcp.ClientCapabilities{},
+			Logger:       slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
+		})
 		command := exec.Command(executable, "--role=server", "--variant="+variant)
 		command.Stderr = os.Stderr
 		session, err := client.Connect(ctx, &mcp.CommandTransport{Command: command}, nil)
 		if err == nil {
-			return session, nil
+			return client, session, nil
 		}
 		lastError = err
 		if !strings.Contains(err.Error(), "EOF") && !strings.Contains(err.Error(), "connection closed") {
 			break
 		}
+		log.Printf("transient MCP stdio connect attempt %d failed: %v", attempt, err)
 		time.Sleep(time.Duration(attempt) * 100 * time.Millisecond)
 	}
-	return nil, lastError
+	return nil, nil, lastError
 }
 
 func telemetryMiddleware(tracer trace.Tracer, identity *serverIdentity) mcp.Middleware {
@@ -332,8 +365,8 @@ func validateToolSet(variant string, tools []*mcp.Tool) error {
 	if variant == "before" && names["shell.execute"] {
 		return errors.New("before variant unexpectedly declared shell.execute")
 	}
-	if variant == "after" && !names["shell.execute"] {
-		return errors.New("after variant did not declare shell.execute")
+	if (variant == "after" || variant == "vulnerable") && !names["shell.execute"] {
+		return fmt.Errorf("%s variant did not declare shell.execute", variant)
 	}
 	return nil
 }

@@ -14,6 +14,8 @@ const (
 )
 
 var retainedObservationAttributes = map[string]struct{}{
+	"aiebom.artifact.sha256":                {},
+	"aiebom.artifact.uri":                   {},
 	"aiebom.evidence.level":                 {},
 	"aiebom.mcp.discovery.source":           {},
 	"aiebom.mcp.server.id":                  {},

@@ -19,6 +19,7 @@ type Policy struct {
 	RequireVersionsFor   []string                       `json:"requireVersionsFor,omitempty"`
 	ForbidInferred       bool                           `json:"forbidInferred,omitempty"`
 	ForbidFieldConflicts bool                           `json:"forbidFieldConflicts,omitempty"`
+	DeniedFindingLevels  []string                       `json:"deniedFindingLevels,omitempty"`
 	DeniedPaths          []PathRule                     `json:"deniedPaths,omitempty"`
 }
 
@@ -76,6 +77,13 @@ func Evaluate(graph model.Graph, policy Policy, generatedAt time.Time) (Report, 
 			return Report{}, fmt.Errorf("minimum evidence for %q is invalid: %q", nodeType, level)
 		}
 	}
+	deniedFindingLevels := make(map[string]struct{}, len(policy.DeniedFindingLevels))
+	for index, level := range policy.DeniedFindingLevels {
+		if !validFindingLevel(level) {
+			return Report{}, fmt.Errorf("denied finding level %d is invalid: %q", index, level)
+		}
+		deniedFindingLevels[level] = struct{}{}
+	}
 	pathRules := make([]compiledPathRule, 0, len(policy.DeniedPaths))
 	for index, rule := range policy.DeniedPaths {
 		compiled, err := compilePathRule(rule, index)
@@ -86,6 +94,13 @@ func Evaluate(graph model.Graph, policy Policy, generatedAt time.Time) (Report, 
 	}
 
 	for _, node := range graph.Nodes {
+		if node.Type == "finding" && len(deniedFindingLevels) > 0 {
+			for _, level := range findingLevels(node) {
+				if _, denied := deniedFindingLevels[level]; denied {
+					report.add(node, "denied-finding-level", fmt.Sprintf("scanner-reported SARIF level %q is denied", level))
+				}
+			}
+		}
 		if policy.ForbidInferred && node.Evidence.Level == model.EvidenceInferred {
 			report.add(node, "forbid-inferred", "inferred evidence is not allowed")
 		}
@@ -135,6 +150,36 @@ func Evaluate(graph model.Graph, policy Policy, generatedAt time.Time) (Report, 
 		return report.Violations[i].NodeID < report.Violations[j].NodeID
 	})
 	return report, nil
+}
+
+func findingLevels(node model.Node) []string {
+	levels := make(map[string]struct{})
+	if selected := node.Properties["aiebom.finding.sarif.level"]; selected != "" {
+		levels[selected] = struct{}{}
+	}
+	for _, claim := range node.FieldEvidence {
+		if claim.Field != model.FieldProperty || claim.Key != "aiebom.finding.sarif.level" {
+			continue
+		}
+		for _, candidate := range claim.Values {
+			levels[candidate.Value] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(levels))
+	for level := range levels {
+		result = append(result, level)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func validFindingLevel(level string) bool {
+	switch level {
+	case "none", "note", "warning", "error":
+		return true
+	default:
+		return false
+	}
 }
 
 type compiledSelector struct {
